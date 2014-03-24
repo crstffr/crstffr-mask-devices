@@ -28,25 +28,27 @@
 
 #include "spark_wiring.h"
 
+#define TCPCLIENT_BUF_MAX_SIZE	512
 
 class TCPClient : public Stream {
 
 public:
 	TCPClient();
 	TCPClient(uint8_t sock);
+        virtual ~TCPClient() {};
 
-	uint8_t status();
+  uint8_t status();
 	virtual int connect(IPAddress ip, uint16_t port);
 	virtual int connect(const char *host, uint16_t port);
 	virtual size_t write(uint8_t);
-	virtual size_t write(const uint8_t *buf, size_t size);
+	virtual size_t write(const uint8_t *buffer, size_t size);
 	virtual int available();
 	virtual int read();
-	virtual int read(uint8_t *buf, size_t size);
+	virtual int read(uint8_t *buffer, size_t size);
 	virtual int peek();
 	virtual void flush();
 	virtual void stop();
-	virtual uint8_t connected();
+	virtual bool connected();
 	virtual operator bool();
 
 	friend class TCPServer;
@@ -56,6 +58,11 @@ public:
 private:
 	static uint16_t _srcport;
 	long _sock;
+	uint8_t _buffer[TCPCLIENT_BUF_MAX_SIZE];
+	uint16_t _offset;
+	uint16_t _total;
+	inline int bufferCount();
+	inline int isWanReady();
 };
 
 #endif

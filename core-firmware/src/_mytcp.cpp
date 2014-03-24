@@ -12,6 +12,7 @@ MyTCP::MyTCP() {
     ACK = '\x06';
     BEL = '\x07';
     DLE = '\x10';
+    ETB = '\x17';
     port = 5000;
     ready = false;
     timeout = 5000;
@@ -51,6 +52,7 @@ int MyTCP::connect() {
     }
     if (ready && tcp.connect(server, port)) {
         resetTimer();
+        identify();
         return 1;
     } else {
         return -1;
@@ -70,7 +72,7 @@ int MyTCP::disconnect() {
 int MyTCP::sendAction(String who, String what) {
     if (tcp.connected()) {
         resetTimer();
-        tcp.print(STX + who + ETX + what + DLE + EOT);
+        tcp.print(STX + who + ETX + what + EOT);
         delay(10);
         return 1;
     } else {
@@ -81,7 +83,7 @@ int MyTCP::sendAction(String who, String what) {
 int MyTCP::sendValue(String who, String value) {
     if (tcp.connected()) {
         resetTimer();
-        tcp.print(STX + who + ETX + "^" + DLE + value + EOT);
+        tcp.print(STX + who + "=" + value + EOT);
         delay(10);
         return 1;
     } else {

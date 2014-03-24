@@ -43,7 +43,7 @@ INCLUDE_DIRS += CMSIS/Device/ST/STM32F10x/Include
 # Compiler flags
 CFLAGS =  -g3 -gdwarf-2 -Os -mcpu=cortex-m3 -mthumb 
 CFLAGS += $(patsubst %,-I$(SRC_PATH)/%,$(INCLUDE_DIRS)) -I.
-CFLAGS += -ffunction-sections -Wall -fmessage-length=0 
+CFLAGS += -ffunction-sections -Wall -Wno-switch -fmessage-length=0
 
 # Generate dependancy files automatically.
 CFLAGS += -MD -MP -MF $@.d
@@ -51,6 +51,16 @@ CFLAGS += -MD -MP -MF $@.d
 # Target specific defines
 CFLAGS += -DUSE_STDPERIPH_DRIVER
 CFLAGS += -DSTM32F10X_MD
+
+ifeq ("$(USE_SWD_JTAG)","y") 
+CFLAGS += -DUSE_SWD_JTAG
+endif
+
+ifeq ("$(DEBUG_BUILD)","y") 
+CFLAGS += -DDEBUG_BUILD
+else
+CFLAGS += -DRELEASE_BUILD
+endif
 
 # C++ specific flags
 CPPFLAGS = -fno-exceptions -fno-rtti

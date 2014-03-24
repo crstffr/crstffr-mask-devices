@@ -26,6 +26,8 @@
  */
 
 /* Includes ------------------------------------------------------------------*/
+#include "spark_macros.h"
+#include "debug.h"
 #include "stm32_it.h"
 #include "main.h"
 #include "usb_lib.h"
@@ -49,6 +51,7 @@ void Wiring_I2C1_EV_Interrupt_Handler(void) __attribute__ ((weak));
 void Wiring_I2C1_ER_Interrupt_Handler(void) __attribute__ ((weak));
 void Wiring_SPI1_Interrupt_Handler(void) __attribute__ ((weak));
 void Wiring_EXTI_Interrupt_Handler(uint8_t EXTI_Line_Number) __attribute__ ((weak));
+void Wiring_RTC_Interrupt_Handler(void) __attribute__ ((weak));
 
 /* Private functions ---------------------------------------------------------*/
 
@@ -77,6 +80,7 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
 	/* Go to infinite loop when Hard Fault exception occurs */
+        PANIC(HardFault,"HardFault");
 	while (1)
 	{
 	}
@@ -92,6 +96,7 @@ void HardFault_Handler(void)
 void MemManage_Handler(void)
 {
 	/* Go to infinite loop when Memory Manage exception occurs */
+        PANIC(MemManage,"MemManage");
 	while (1)
 	{
 	}
@@ -107,7 +112,8 @@ void MemManage_Handler(void)
 void BusFault_Handler(void)
 {
 	/* Go to infinite loop when Bus Fault exception occurs */
-	while (1)
+        PANIC(BusFault,"BusFault");
+        while (1)
 	{
 	}
 }
@@ -122,6 +128,7 @@ void BusFault_Handler(void)
 void UsageFault_Handler(void)
 {
 	/* Go to infinite loop when Usage Fault exception occurs */
+        PANIC(UsageFault,"UsageFault");
 	while (1)
 	{
 	}
@@ -169,6 +176,7 @@ void PendSV_Handler(void)
  *******************************************************************************/
 void SysTick_Handler(void)
 {
+	System1MsTick();
 	Timing_Decrement();
 }
 
@@ -305,7 +313,6 @@ void EXTI1_IRQHandler(void)
  *******************************************************************************/
 void EXTI2_IRQHandler(void)
 {
-#if defined (USE_SPARK_CORE_V02)
 	if (EXTI_GetITStatus(EXTI_Line2) != RESET)//BUTTON1_EXTI_LINE
 	{
 		/* Clear the EXTI line pending bit */
@@ -319,7 +326,6 @@ void EXTI2_IRQHandler(void)
 		/* Enable TIM1 CC4 Interrupt */
 		TIM_ITConfig(TIM1, TIM_IT_CC4, ENABLE);
 	}
-#endif
 }
 
 /*******************************************************************************
@@ -460,22 +466,6 @@ void EXTI15_10_IRQHandler(void)
 
 		SPI_EXTI_IntHandler();
 	}
-
-#if defined (USE_SPARK_CORE_V01)
-	if (EXTI_GetITStatus(EXTI_Line10) != RESET)//BUTTON1_EXTI_LINE
-	{
-		/* Clear the EXTI line pending bit */
-		EXTI_ClearITPendingBit(EXTI_Line10);//BUTTON1_EXTI_LINE
-
-		BUTTON_DEBOUNCED_TIME[BUTTON1] = 0x00;
-
-		/* Disable BUTTON1 Interrupt */
-		BUTTON_EXTI_Config(BUTTON1, DISABLE);
-
-		/* Enable TIM1 CC4 Interrupt */
-		TIM_ITConfig(TIM1, TIM_IT_CC4, ENABLE);
-	}
-#endif
 }
 
 /*******************************************************************************
@@ -506,7 +496,6 @@ void TIM1_CC_IRQHandler(void)
 	}
 }
 
-#if defined (USE_SPARK_CORE_V02)
 /*******************************************************************************
  * Function Name  : RTC_IRQHandler
  * Description    : This function handles RTC global interrupt request.
@@ -518,25 +507,13 @@ void RTC_IRQHandler(void)
 {
 	if(RTC_GetITStatus(RTC_IT_SEC) != RESET)
 	{
-//		/* If counter is equal to 86339: one day was elapsed */
-//		if((RTC_GetCounter() / 3600 == 23)
-//				&& (((RTC_GetCounter() % 3600) / 60) == 59)
-//				&& (((RTC_GetCounter() % 3600) % 60) == 59)) /* 23*3600 + 59*60 + 59 = 86339 */
-//		{
-//			/* Wait until last write operation on RTC registers has finished */
-//			RTC_WaitForLastTask();
-//
-//			/* Reset counter value */
-//			RTC_SetCounter(0x0);
-//
-//			/* Wait until last write operation on RTC registers has finished */
-//			RTC_WaitForLastTask();
-//
-//			/* Increment no_of_days_elapsed variable here */
-//		}
-
 		/* Clear the RTC Second Interrupt pending bit */
 		RTC_ClearITPendingBit(RTC_IT_SEC);
+
+		if(NULL != Wiring_RTC_Interrupt_Handler)
+		{
+			Wiring_RTC_Interrupt_Handler();
+		}
 
 		/* Wait until last write operation on RTC registers has finished */
 		RTC_WaitForLastTask();
@@ -576,7 +553,6 @@ void RTCAlarm_IRQHandler(void)
 		RTC_WaitForLastTask();
 	}
 }
-#endif
 
 /*******************************************************************************
  * Function Name  : DMA1_Channel5_IRQHandler

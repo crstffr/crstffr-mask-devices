@@ -289,4 +289,76 @@ SUITE(SparkProtocolConstruction)
   {
     CHECK_EQUAL(true, spark_protocol.is_initialized());
   }
+
+  TEST_FIXTURE(ConstructorFixture, EventMatchesOpenSSL)
+  {
+    uint8_t expected[34] = {
+      0x00, 0x20,
+      0x7F, 0xF7, 0x08, 0xE3, 0xCC, 0x6B, 0xF8, 0xFC,
+      0x82, 0xA2, 0x0A, 0x51, 0x85, 0xF5, 0xC3, 0xC5,
+      0xDB, 0xE3, 0xF9, 0xED, 0xB0, 0x6D, 0x08, 0x8B,
+      0x75, 0x39, 0x8D, 0xE1, 0xE2, 0x34, 0x14, 0x0D };
+    spark_protocol.handshake();
+    bytes_received[0] = bytes_sent[0] = 0;
+    spark_protocol.send_event("motion-detected", NULL, 60, EventType::PUBLIC);
+    CHECK_ARRAY_EQUAL(expected, sent_buf_0, 34);
+  }
+
+  TEST_FIXTURE(ConstructorFixture, EventWithDataMatchesOpenSSL)
+  {
+    uint8_t expected[34] = {
+      0x00, 0x20,
+      0x5A, 0xF0, 0xB5, 0x26, 0x02, 0x63, 0x3D, 0xDF,
+      0xFD, 0x09, 0xAF, 0x73, 0x30, 0x7B, 0x00, 0x6C,
+      0x5E, 0x9F, 0x9D, 0x79, 0xA1, 0x07, 0x87, 0xFD,
+      0xF8, 0x3B, 0x75, 0x10, 0xCD, 0x9C, 0xE5, 0x1C };
+    spark_protocol.handshake();
+    bytes_received[0] = bytes_sent[0] = 0;
+    spark_protocol.send_event("lake-depth/1", "28m", 21600, EventType::PRIVATE);
+    CHECK_ARRAY_EQUAL(expected, sent_buf_0, 34);
+  }
+
+  TEST_FIXTURE(ConstructorFixture, PublishingBurst4EventsSucceeds)
+  {
+    bool success[4];
+    next_millis = 1000;
+    success[0] = spark_protocol.send_event("a", NULL, 60, EventType::PUBLIC);
+    success[1] = spark_protocol.send_event("b", NULL, 60, EventType::PUBLIC);
+    success[2] = spark_protocol.send_event("c", NULL, 60, EventType::PUBLIC);
+    success[3] = spark_protocol.send_event("d", NULL, 60, EventType::PUBLIC);
+    CHECK(success[0] && success[1] && success[2] && success[3]);
+  }
+
+  TEST_FIXTURE(ConstructorFixture, PublishingBurst5EventsFails)
+  {
+    bool success[5];
+    next_millis = 2000;
+    success[0] = spark_protocol.send_event("a", NULL, 60, EventType::PUBLIC);
+    success[1] = spark_protocol.send_event("b", NULL, 60, EventType::PUBLIC);
+    success[2] = spark_protocol.send_event("c", NULL, 60, EventType::PUBLIC);
+    success[3] = spark_protocol.send_event("d", NULL, 60, EventType::PUBLIC);
+    success[4] = spark_protocol.send_event("e", NULL, 60, EventType::PUBLIC);
+    CHECK(success[0] && success[1] && success[2] && success[3] && !success[4]);
+  }
+
+  TEST_FIXTURE(ConstructorFixture, PublishingBurst4Wait1SBurst4AgainSucceeds)
+  {
+    bool success[4];
+
+    next_millis = 3000;
+    success[0] = spark_protocol.send_event("a", NULL, 60, EventType::PUBLIC);
+    success[1] = spark_protocol.send_event("b", NULL, 60, EventType::PUBLIC);
+    success[2] = spark_protocol.send_event("c", NULL, 60, EventType::PUBLIC);
+    success[3] = spark_protocol.send_event("d", NULL, 60, EventType::PUBLIC);
+    bool first_burst_success = success[0] && success[1] && success[2] && success[3];
+
+    next_millis = 4000;
+    success[0] = spark_protocol.send_event("a", NULL, 60, EventType::PUBLIC);
+    success[1] = spark_protocol.send_event("b", NULL, 60, EventType::PUBLIC);
+    success[2] = spark_protocol.send_event("c", NULL, 60, EventType::PUBLIC);
+    success[3] = spark_protocol.send_event("d", NULL, 60, EventType::PUBLIC);
+    bool second_burst_success = success[0] && success[1] && success[2] && success[3];
+
+    CHECK(first_burst_success && second_burst_success);
+  }
 }

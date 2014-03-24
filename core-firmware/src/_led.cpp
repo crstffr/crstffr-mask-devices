@@ -10,6 +10,7 @@ LED::LED(int pinR, int pinG, int pinB) {
     _b = 0;
     _blink = 0;
     _blinkGap = 350;
+    _intensity = 50;
     pinMode(_pinR, OUTPUT);
     pinMode(_pinG, OUTPUT);
     pinMode(_pinB, OUTPUT);
@@ -26,7 +27,7 @@ void LED::tick() {
 }
 
 void LED::off() {
-    rgb(0,0,0);
+    blank();
 }
 
 void LED::blank() {
@@ -44,11 +45,24 @@ void LED::rgb(int r, int g, int b) {
     _b = b;
 }
 
+void LED::dim() {
+    if (_intensity == 0) {
+        intensity(50);
+    } else if (_intensity > 5) {
+        intensity(5);
+    } else {
+        intensity(0);
+    }
+}
+
 void LED::intensity(int value) {
+    _intensity = value;
     int r = int((_r / 100) * value);
     int g = int((_g / 100) * value);
     int b = int((_b / 100) * value);
-    rgb(r,g,b);
+    analogWrite(_pinR, r);
+    analogWrite(_pinG, g);
+    analogWrite(_pinB, b);
 }
 
 void LED::fade() {
@@ -115,6 +129,6 @@ void LED::color(String name) {
         rgb(255, 165, 0);
     }
 
-    intensity(25);
+    intensity(_intensity);
 
 }

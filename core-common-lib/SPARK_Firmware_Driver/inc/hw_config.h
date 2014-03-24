@@ -28,7 +28,9 @@
 #define __HW_CONFIG_H
 /* Includes ------------------------------------------------------------------*/
 
+#include <limits.h>
 #include "platform_config.h"
+#include "config.h"
 #include "sst25vf_spi.h"
 #include "cc3000_common.h"
 #include "usb_type.h"
@@ -69,6 +71,19 @@ typedef enum
 	CC3000_DMA_TX = 0, CC3000_DMA_RX = 1
 } CC3000_DMADirection_TypeDef;
 
+typedef enum
+{
+  IP_ADDRESS = 0, DOMAIN_NAME = 1, INVALID_INTERNET_ADDRESS = 0xff
+} Internet_Address_TypeDef;
+
+typedef struct ServerAddress {
+  Internet_Address_TypeDef addr_type;
+  union {
+    char domain[127];
+    uint32_t ip;
+  };
+} ServerAddress;
+
 /* Exported constants --------------------------------------------------------*/
 
 /* Exported macros ------------------------------------------------------------*/
@@ -92,6 +107,10 @@ typedef enum
 /* External Flash memory address where OTA upgraded core firmware will be saved */
 #define EXTERNAL_FLASH_OTA_ADDRESS	((uint32_t)(EXTERNAL_FLASH_BLOCK_SIZE + EXTERNAL_FLASH_BKP_ADDRESS))
 
+/* External Flash memory address where server domain/IP resides */
+#define EXTERNAL_FLASH_SERVER_DOMAIN_ADDRESS      ((uint32_t)0x1180)
+/* Length in bytes of server domain/IP data */
+#define EXTERNAL_FLASH_SERVER_DOMAIN_LENGTH       (128)
 /* External Flash memory address where server public RSA key resides */
 #define EXTERNAL_FLASH_SERVER_PUBLIC_KEY_ADDRESS	((uint32_t)0x01000)
 /* Length in bytes of DER-encoded 2048-bit RSA public key */
@@ -101,13 +120,12 @@ typedef enum
 /* Length in bytes of DER-encoded 1024-bit RSA private key */
 #define EXTERNAL_FLASH_CORE_PRIVATE_KEY_LENGTH		(612)
 
-/* Bootloader Flash Pages that needs to be protected: 0x08000000 – 0x08003FFF */
+/* Bootloader Flash Pages that needs to be protected: 0x08000000 - 0x08003FFF */
 #define BOOTLOADER_FLASH_PAGES		( FLASH_WRProt_Pages0to3	\
 									| FLASH_WRProt_Pages4to7	\
 									| FLASH_WRProt_Pages8to11	\
 									| FLASH_WRProt_Pages12to15 )
 
-#if defined (USE_SPARK_CORE_V02)
 //Extended LED Types
 #define LED_RGB				LED3_LED4_LED2
 #define LED_USER			LED1
@@ -120,7 +138,6 @@ typedef enum
 #define RGB_COLOR_CYAN		0x00FFFF
 #define RGB_COLOR_MAGENTA	0xFF00FF
 #define RGB_COLOR_WHITE		0xFFFFFF
-#endif
 
 /* USB Config : IMR_MSK */
 /* mask defining which events has to be handled */
@@ -134,17 +151,23 @@ typedef enum
                  CNTR_RESETM  \
                 )
 
+#define TIMING_IWDG_RELOAD	1000 //1sec
+
+#define SYSTEM_US_TICKS		(SystemCoreClock / 1000000)//cycles per microsecond
+
 /* Exported functions ------------------------------------------------------- */
 void Set_System(void);
 void NVIC_Configuration(void);
 void SysTick_Configuration(void);
-void Delay(__IO uint32_t nTime);
-void Delay_Microsecond(__IO uint32_t uSec);
+void Delay(uint32_t nTime);
+void Delay_Microsecond(uint32_t uSec);
 
-#if defined (USE_SPARK_CORE_V02)
+typedef uint32_t system_tick_t;
+void System1MsTick(void);
+system_tick_t GetSystem1MsTick(void);
+
 void RTC_Configuration(void);
 void Enter_STANDBY_Mode(void);
-#endif
 
 void IWDG_Reset_Enable(uint32_t msTimeout);
 
@@ -153,14 +176,12 @@ DIO_Error_TypeDef DIO_SetState(DIO_TypeDef Dx, DIO_State_TypeDef State);
 
 void UI_Timer_Configure(void);
 
-#if defined (USE_SPARK_CORE_V02)
 void LED_SetRGBColor(uint32_t RGB_Color);
 void LED_SetSignalingColor(uint32_t RGB_Color);
 void LED_Signaling_Start(void);
 void LED_Signaling_Stop(void);
 void LED_Signaling_Override(void) __attribute__ ((weak));
 void LED_SetBrightness(uint8_t brightness); /* 0 = off, 255 = full brightness */
-#endif
 
 void LED_Init(Led_TypeDef Led);
 void LED_On(Led_TypeDef Led);
@@ -210,17 +231,21 @@ void Save_SystemFlags(void);
 void FLASH_WriteProtection_Enable(uint32_t FLASH_Pages);
 void FLASH_WriteProtection_Disable(uint32_t FLASH_Pages);
 /* Internal Flash Backup to sFlash and Restore from sFlash Helper routines */
+void FLASH_Erase(void);
 void FLASH_Backup(uint32_t sFLASH_Address);
 void FLASH_Restore(uint32_t sFLASH_Address);
 /* External Flash Helper routines */
 void FLASH_Begin(uint32_t sFLASH_Address);
 void FLASH_Update(uint8_t *pBuffer, uint32_t bufferSize);
 void FLASH_End(void);
+void FLASH_Read_ServerAddress(ServerAddress *server_addr);
 void FLASH_Read_ServerPublicKey(uint8_t *keyBuffer);
 void FLASH_Read_CorePrivateKey(uint8_t *keyBuffer);
 
-void Factory_Flash_Reset(void);
-void OTA_Flash_Update(void);
+void FACTORY_Flash_Reset(void);
+void BACKUP_Flash_Reset(void);
+void OTA_Flash_Reset(void);
+
 bool OTA_Flashed_GetStatus(void);
 void OTA_Flashed_ResetStatus(void);
 
@@ -234,10 +259,10 @@ void Get_Unique_Device_ID(uint8_t *Device_ID);
 /* External variables --------------------------------------------------------*/
 extern uint8_t USE_SYSTEM_FLAGS;
 
-extern __IO uint32_t TimingDelay;
-extern __IO uint32_t TimingLED;
-extern __IO uint32_t TimingBUTTON;
-extern __IO uint32_t TimingIWDGReload;
+extern volatile uint32_t TimingDelay;
+extern volatile uint32_t TimingLED;
+extern volatile uint32_t TimingBUTTON;
+extern volatile  uint32_t TimingIWDGReload;
 
 extern __IO uint8_t IWDG_SYSTEM_RESET;
 
@@ -250,4 +275,22 @@ extern uint16_t FLASH_OTA_Update_SysFlag;
 extern unsigned char wlan_rx_buffer[];
 extern unsigned char wlan_tx_buffer[];
 
+enum eSystemHealth {
+  FIRST_RETRY = 1,
+  SECOND_RETRY = 2,
+  THIRD_RETRY = 3,
+  ENTERED_SparkCoreConfig,
+  ENTERED_Main,
+  ENTERED_WLAN_Loop,
+  ENTERED_Setup,
+  ENTERED_Loop,
+  RAN_Loop,
+  PRESERVE_APP,
+};
+
+#define SET_SYS_HEALTH(health) BKP_WriteBackupRegister(BKP_DR1, (health))
+#define GET_SYS_HEALTH() BKP_ReadBackupRegister(BKP_DR1)
+extern uint16_t sys_health_cache;
+#define DECLARE_SYS_HEALTH(health)  do { if ((health) > sys_health_cache) {SET_SYS_HEALTH(sys_health_cache=(health));}} while(0)
+#define KICK_WDT() IWDG_ReloadCounter()
 #endif  /*__HW_CONFIG_H*/

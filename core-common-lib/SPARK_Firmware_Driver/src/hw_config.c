@@ -27,6 +27,7 @@
 #include "hw_config.h"
 #include "usb_lib.h"
 #include "usb_pwr.h"
+#include <string.h>
 
 /* Private typedef -----------------------------------------------------------*/
 
@@ -36,43 +37,46 @@
 
 /* Private variables ---------------------------------------------------------*/
 uint8_t USE_SYSTEM_FLAGS = 0;	//0, 1
+uint16_t sys_health_cache = 0; // Used by the SYS_HEALTH macros store new heath if higher
 
-__IO uint32_t TimingDelay;
-__IO uint32_t TimingLED;
-__IO uint32_t TimingBUTTON;
-__IO uint32_t TimingIWDGReload;
+volatile uint32_t TimingDelay;
+volatile uint32_t TimingLED;
+volatile uint32_t TimingBUTTON;
+volatile uint32_t TimingIWDGReload;
 
 __IO uint8_t IWDG_SYSTEM_RESET;
 
-GPIO_TypeDef* DIO_PORT[] = {D0_GPIO_PORT, D1_GPIO_PORT, D2_GPIO_PORT, D3_GPIO_PORT,
+GPIO_TypeDef* DIO_GPIO_PORT[] = {D0_GPIO_PORT, D1_GPIO_PORT, D2_GPIO_PORT, D3_GPIO_PORT,
 								D4_GPIO_PORT, D5_GPIO_PORT, D6_GPIO_PORT, D7_GPIO_PORT};
-const uint16_t DIO_PIN[] = {D0_PIN, D1_PIN, D2_PIN, D3_PIN,
-								D4_PIN, D5_PIN, D6_PIN, D7_PIN};
-const uint32_t DIO_CLK[] = {D0_GPIO_CLK, D1_GPIO_CLK, D2_GPIO_CLK, D3_GPIO_CLK,
+const uint16_t DIO_GPIO_PIN[] = {D0_GPIO_PIN, D1_GPIO_PIN, D2_GPIO_PIN, D3_GPIO_PIN,
+								D4_GPIO_PIN, D5_GPIO_PIN, D6_GPIO_PIN, D7_GPIO_PIN};
+const uint32_t DIO_GPIO_CLK[] = {D0_GPIO_CLK, D1_GPIO_CLK, D2_GPIO_CLK, D3_GPIO_CLK,
 								D4_GPIO_CLK, D5_GPIO_CLK, D6_GPIO_CLK, D7_GPIO_CLK};
 
-GPIO_TypeDef* LED_PORT[] = {LED1_GPIO_PORT, LED2_GPIO_PORT, LED3_GPIO_PORT, LED4_GPIO_PORT};
-const uint16_t LED_PIN[] = {LED1_PIN, LED2_PIN, LED3_PIN, LED4_PIN};
-const uint32_t LED_CLK[] = {LED1_GPIO_CLK, LED2_GPIO_CLK, LED3_GPIO_CLK, LED4_GPIO_CLK};
+GPIO_TypeDef* LED_GPIO_PORT[] = {LED1_GPIO_PORT, LED2_GPIO_PORT, LED3_GPIO_PORT, LED4_GPIO_PORT};
+const uint16_t LED_GPIO_PIN[] = {LED1_GPIO_PIN, LED2_GPIO_PIN, LED3_GPIO_PIN, LED4_GPIO_PIN};
+const uint32_t LED_GPIO_CLK[] = {LED1_GPIO_CLK, LED2_GPIO_CLK, LED3_GPIO_CLK, LED4_GPIO_CLK};
 __IO uint16_t LED_TIM_CCR[] = {0x0000, 0x0000, 0x0000, 0x0000};
 __IO uint16_t LED_TIM_CCR_SIGNAL[] = {0x0000, 0x0000, 0x0000, 0x0000};	//TIM CCR Signal Override
 uint8_t LED_RGB_OVERRIDE = 0;
 uint8_t LED_RGB_BRIGHTNESS = 96;
+uint32_t lastSignalColor = 0;
+uint32_t lastRGBColor = 0;
 
 /* Led Fading. */
 #define NUM_LED_FADE_STEPS 100 /* Called at 100Hz, fade over 1 second. */
 static uint8_t led_fade_step = NUM_LED_FADE_STEPS - 1;
 static int8_t led_fade_direction = -1; /* 1 = rising, -1 = falling. */
 
-GPIO_TypeDef* BUTTON_PORT[] = {BUTTON1_GPIO_PORT, BUTTON2_GPIO_PORT};
-const uint16_t BUTTON_PIN[] = {BUTTON1_PIN, BUTTON2_PIN};
-const uint32_t BUTTON_CLK[] = {BUTTON1_GPIO_CLK, BUTTON2_GPIO_CLK};
+GPIO_TypeDef* BUTTON_GPIO_PORT[] = {BUTTON1_GPIO_PORT, BUTTON2_GPIO_PORT};
+const uint16_t BUTTON_GPIO_PIN[] = {BUTTON1_GPIO_PIN, BUTTON2_GPIO_PIN};
+const uint32_t BUTTON_GPIO_CLK[] = {BUTTON1_GPIO_CLK, BUTTON2_GPIO_CLK};
 GPIOMode_TypeDef BUTTON_GPIO_MODE[] = {BUTTON1_GPIO_MODE, BUTTON2_GPIO_MODE};
 __IO uint16_t BUTTON_DEBOUNCED_TIME[] = {0, 0};
 
 const uint16_t BUTTON_EXTI_LINE[] = {BUTTON1_EXTI_LINE, BUTTON2_EXTI_LINE};
-const uint16_t BUTTON_PORT_SOURCE[] = {BUTTON1_EXTI_PORT_SOURCE, BUTTON2_EXTI_PORT_SOURCE};
-const uint16_t BUTTON_PIN_SOURCE[] = {BUTTON1_EXTI_PIN_SOURCE, BUTTON2_EXTI_PIN_SOURCE};
+const uint16_t BUTTON_GPIO_PORT_SOURCE[] = {BUTTON1_EXTI_PORT_SOURCE, BUTTON2_EXTI_PORT_SOURCE};
+const uint16_t BUTTON_GPIO_PIN_SOURCE[] = {BUTTON1_EXTI_PIN_SOURCE, BUTTON2_EXTI_PIN_SOURCE};
 const uint16_t BUTTON_IRQn[] = {BUTTON1_EXTI_IRQn, BUTTON2_EXTI_IRQn};
 EXTITrigger_TypeDef BUTTON_EXTI_TRIGGER[] = {BUTTON1_EXTI_TRIGGER, BUTTON2_EXTI_TRIGGER};
 
@@ -104,9 +108,13 @@ __IO uint16_t sFLASH_SPI_CR;
  * @brief  Initialise Data Watchpoint and Trace Register (DWT).
  * @param  None
  * @retval None
+ *
+ *
  */
+
 static void DWT_Init(void)
 {
+        DBGMCU->CR |= DBGMCU_SETTINGS;
 	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
 	DWT->CYCCNT = 0;
 	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
@@ -208,7 +216,7 @@ void SysTick_Configuration(void)
 * Output         : None
 * Return         : None
 *******************************************************************************/
-void Delay(__IO uint32_t nTime)
+void Delay(uint32_t nTime)
 {
     TimingDelay = nTime;
 
@@ -217,18 +225,29 @@ void Delay(__IO uint32_t nTime)
 
 /*******************************************************************************
  * Function Name  : Delay_Microsecond
- * Description    : Inserts a delay time in microseconds using DWT.
+ * Description    : Inserts a delay time in microseconds using 32-bit DWT->CYCCNT
  * Input          : uSec: specifies the delay time length, in microseconds.
  * Output         : None
  * Return         : None
  *******************************************************************************/
-void Delay_Microsecond(__IO uint32_t uSec)
+void Delay_Microsecond(uint32_t uSec)
 {
-	uint32_t DWT_CYCCNT = (((SystemCoreClock / 1000000) * uSec) + DWT->CYCCNT);
-	while (DWT_CYCCNT > DWT->CYCCNT);
+  volatile uint32_t DWT_START = DWT->CYCCNT;
+
+  // keep DWT_TOTAL from overflowing (max 59.652323s w/72MHz SystemCoreClock)
+  if (uSec > (UINT_MAX / SYSTEM_US_TICKS))
+  {
+    uSec = (UINT_MAX / SYSTEM_US_TICKS);
+  }
+
+  volatile uint32_t DWT_TOTAL = (SYSTEM_US_TICKS * uSec);
+
+  while((DWT->CYCCNT - DWT_START) < DWT_TOTAL)
+  {
+    KICK_WDT();
+  }
 }
 
-#if defined (USE_SPARK_CORE_V02)
 void RTC_Configuration(void)
 {
 	EXTI_InitTypeDef EXTI_InitStructure;
@@ -323,25 +342,20 @@ void Enter_STANDBY_Mode(void)
 
     NVIC_SystemReset();
 }
-#endif
 
 void IWDG_Reset_Enable(uint32_t msTimeout)
 {
-	uint16_t Reload_Value;
-
-	if(msTimeout > 10000)
-		msTimeout = 10000;	//Max IWDG timeout that can be set is 10 sec
-
 	/* Enable write access to IWDG_PR and IWDG_RLR registers */
 	IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
 
 	/* IWDG counter clock: LSI/256 */
 	IWDG_SetPrescaler(IWDG_Prescaler_256);
 
-	/* IWDG timeout may vary due to LSI frequency dispersion */
-	Reload_Value = (uint16_t)((msTimeout * 40) / 256); //Assuming LSI Frequency = 40000
+        /* IWDG timeout may vary due to LSI frequency dispersion */
+        msTimeout = ((msTimeout * 40) / 256); //Assuming LSI Frequency = 40000
+        if (msTimeout > 0xfff) msTimeout = 0xfff;   // 26214.4
 
-	IWDG_SetReload(Reload_Value);
+	IWDG_SetReload((uint16_t)msTimeout);
 
 	/* Reload IWDG counter */
 	IWDG_ReloadCounter();
@@ -360,13 +374,13 @@ void DIO_Init(DIO_TypeDef Dx)
     GPIO_InitTypeDef  GPIO_InitStructure;
 
     /* Enable the GPIO_Dx Clock */
-    RCC_APB2PeriphClockCmd(DIO_CLK[Dx], ENABLE);
+    RCC_APB2PeriphClockCmd(DIO_GPIO_CLK[Dx], ENABLE);
 
     /* Configure the GPIO_Dx pin */
-    GPIO_InitStructure.GPIO_Pin = DIO_PIN[Dx];
+    GPIO_InitStructure.GPIO_Pin = DIO_GPIO_PIN[Dx];
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(DIO_PORT[Dx], &GPIO_InitStructure);
+    GPIO_Init(DIO_GPIO_PORT[Dx], &GPIO_InitStructure);
 
     /* Set to Off State */
     DIO_SetState(Dx, LOW);
@@ -383,9 +397,9 @@ DIO_Error_TypeDef DIO_SetState(DIO_TypeDef Dx, DIO_State_TypeDef State)
 	if(Dx < 0 || Dx > Dn)
 		return FAIL;
 	else if(State == HIGH)
-		DIO_PORT[Dx]->BSRR = DIO_PIN[Dx];
+		DIO_GPIO_PORT[Dx]->BSRR = DIO_GPIO_PIN[Dx];
 	else if(State == LOW)
-		DIO_PORT[Dx]->BRR = DIO_PIN[Dx];
+		DIO_GPIO_PORT[Dx]->BRR = DIO_GPIO_PIN[Dx];
 
 	return OK;
 }
@@ -421,11 +435,7 @@ void UI_Timer_Configure(void)
 	TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
 	TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
 	TIM_OCInitStructure.TIM_Pulse = 0x0000;
-#if defined (USE_SPARK_CORE_V01)
-	TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High;
-#elif defined (USE_SPARK_CORE_V02)
 	TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_Low;
-#endif
 	TIM_OCInitStructure.TIM_OCIdleState = TIM_OCIdleState_Reset;
 
 	TIM_OC1Init(TIM1, &TIM_OCInitStructure);
@@ -455,9 +465,9 @@ void UI_Timer_Configure(void)
 	TIM_CtrlPWMOutputs(TIM1, ENABLE);
 }
 
-#if defined (USE_SPARK_CORE_V02)
 void LED_SetRGBColor(uint32_t RGB_Color)
 {
+  lastRGBColor = RGB_Color;
 	LED_TIM_CCR[2] = (uint16_t)((((RGB_Color & 0xFF0000) >> 16) * LED_RGB_BRIGHTNESS * (TIM1->ARR + 1)) >> 16); //LED3 -> Red Led
 	LED_TIM_CCR[3] = (uint16_t)((((RGB_Color & 0xFF00) >> 8) * LED_RGB_BRIGHTNESS * (TIM1->ARR + 1)) >> 16);    //LED4 -> Green Led
 	LED_TIM_CCR[1] = (uint16_t)(((RGB_Color & 0xFF) * LED_RGB_BRIGHTNESS * (TIM1->ARR + 1)) >> 16);             //LED2 -> Blue Led
@@ -465,6 +475,7 @@ void LED_SetRGBColor(uint32_t RGB_Color)
 
 void LED_SetSignalingColor(uint32_t RGB_Color)
 {
+  lastSignalColor = RGB_Color;
 	LED_TIM_CCR_SIGNAL[2] = (uint16_t)((((RGB_Color & 0xFF0000) >> 16) * LED_RGB_BRIGHTNESS * (TIM1->ARR + 1)) >> 16); //LED3 -> Red Led
 	LED_TIM_CCR_SIGNAL[3] = (uint16_t)((((RGB_Color & 0xFF00) >> 8) * LED_RGB_BRIGHTNESS * (TIM1->ARR + 1)) >> 16);    //LED4 -> Green Led
 	LED_TIM_CCR_SIGNAL[1] = (uint16_t)(((RGB_Color & 0xFF) * LED_RGB_BRIGHTNESS * (TIM1->ARR + 1)) >> 16);             //LED2 -> Blue Led
@@ -487,8 +498,13 @@ void LED_Signaling_Stop(void)
 void LED_SetBrightness(uint8_t brightness)
 {
   LED_RGB_BRIGHTNESS = brightness;
+
+  /* Recompute RGB scale using new value for brightness. */
+	if (LED_RGB_OVERRIDE)
+    LED_SetSignalingColor(lastSignalColor);
+  else
+    LED_SetRGBColor(lastRGBColor);
 }
-#endif
 
 /**
   * @brief  Configures LED GPIO.
@@ -502,21 +518,17 @@ void LED_Init(Led_TypeDef Led)
     GPIO_InitTypeDef  GPIO_InitStructure;
 
     /* Enable the GPIO_LED Clock */
-    RCC_APB2PeriphClockCmd(LED_CLK[Led], ENABLE);
+    RCC_APB2PeriphClockCmd(LED_GPIO_CLK[Led], ENABLE);
 
     /* Configure the GPIO_LED pin as alternate function push-pull */
-    GPIO_InitStructure.GPIO_Pin = LED_PIN[Led];
-#if defined (USE_SPARK_CORE_V01)
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
-#elif defined (USE_SPARK_CORE_V02)
+    GPIO_InitStructure.GPIO_Pin = LED_GPIO_PIN[Led];
     if(Led == LED_USER)
     	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
     else
     	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
-#endif
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 
-    GPIO_Init(LED_PORT[Led], &GPIO_InitStructure);
+    GPIO_Init(LED_GPIO_PORT[Led], &GPIO_InitStructure);
 }
 
 /**
@@ -528,22 +540,10 @@ void LED_Init(Led_TypeDef Led)
   */
 void LED_On(Led_TypeDef Led)
 {
-#if defined (USE_SPARK_CORE_V01)
-	switch(Led)
-	{
-	case LED1:
-		TIM1->CCR1 = ((TIM1->ARR + 1) * LED_RGB_BRIGHTNESS) >> 8;
-		break;
-
-	case LED2:
-		TIM1->CCR2 = ((TIM1->ARR + 1) * LED_RGB_BRIGHTNESS) >> 8;
-		break;
-	}
-#elif defined (USE_SPARK_CORE_V02)
 	switch(Led)
 	{
 	case LED_USER:
-		LED_PORT[Led]->BSRR = LED_PIN[Led];
+		LED_GPIO_PORT[Led]->BSRR = LED_GPIO_PIN[Led];
 		break;
 
 	case LED_RGB:	//LED_SetRGBColor() should be called first for this Case
@@ -563,8 +563,9 @@ void LED_On(Led_TypeDef Led)
     led_fade_step = NUM_LED_FADE_STEPS - 1;
     led_fade_direction = -1; /* next fade is falling */
 		break;
+          default:
+		break;
 	}
-#endif
 }
 
 /**
@@ -576,22 +577,10 @@ void LED_On(Led_TypeDef Led)
   */
 void LED_Off(Led_TypeDef Led)
 {
-#if defined (USE_SPARK_CORE_V01)
-	switch(Led)
-	{
-	case LED1:
-		TIM1->CCR1 = 0;
-		break;
-
-	case LED2:
-		TIM1->CCR2 = 0;
-		break;
-	}
-#elif defined (USE_SPARK_CORE_V02)
 	switch(Led)
 	{
 	case LED_USER:
-		LED_PORT[Led]->BRR = LED_PIN[Led];
+		LED_GPIO_PORT[Led]->BRR = LED_GPIO_PIN[Led];
 		break;
 
 	case LED_RGB:
@@ -601,8 +590,9 @@ void LED_Off(Led_TypeDef Led)
     led_fade_step = 0;
     led_fade_direction = 1; /* next fade is rising. */
 		break;
+	default:
+		break;
 	}
-#endif
 }
 
 /**
@@ -614,28 +604,12 @@ void LED_Off(Led_TypeDef Led)
   */
 void LED_Toggle(Led_TypeDef Led)
 {
-#if defined (USE_SPARK_CORE_V01)
-	switch(Led)
-	{
-	case LED1:
-    if (TIM1->CCR1)
-      TIM1->CCR1 = 0;
-    else
-      TIM1->CCR1 = ((TIM1->ARR + 1) * LED_RGB_BRIGHTNESS) >> 8;
-		break;
-
-	case LED2:
-    if (TIM1->CCR2)
-      TIM1->CCR2 = 0;
-    else
-      TIM1->CCR2 = ((TIM1->ARR + 1) * LED_RGB_BRIGHTNESS) >> 8;
-		break;
-	}
-#elif defined (USE_SPARK_CORE_V02)
 	switch(Led)
 	{
 	case LED_USER:
-		LED_PORT[Led]->ODR ^= LED_PIN[Led];
+		LED_GPIO_PORT[Led]->ODR ^= LED_GPIO_PIN[Led];
+		break;
+	default:
 		break;
 
 	case LED_RGB://LED_SetRGBColor() and LED_On() should be called first for this Case
@@ -675,7 +649,6 @@ void LED_Toggle(Led_TypeDef Led)
 		}
 		break;
 	}
-#endif
 }
 
 /**
@@ -695,18 +668,6 @@ void LED_Fade(Led_TypeDef Led)
 
   led_fade_step += led_fade_direction;
 
-#if defined (USE_SPARK_CORE_V01)
-	switch(Led)
-	{
-	case LED1:
-    TIM1->CCR1 = (((uint32_t) LED_TIM_CCR[1]) * led_fade_step) / (NUM_LED_FADE_STEPS - 1);
-		break;
-
-	case LED2:
-    TIM1->CCR2 = (((uint32_t) LED_TIM_CCR[2]) * led_fade_step) / (NUM_LED_FADE_STEPS - 1);
-		break;
-	}
-#elif defined (USE_SPARK_CORE_V02)
 	if(Led == LED_RGB)
 	{
 		if(LED_RGB_OVERRIDE == 0)
@@ -722,7 +683,6 @@ void LED_Fade(Led_TypeDef Led)
       TIM1->CCR1 = (((uint32_t) LED_TIM_CCR_SIGNAL[1]) * led_fade_step) / (NUM_LED_FADE_STEPS - 1);
 		}
 	}
-#endif
 }
 
 /**
@@ -744,12 +704,12 @@ void BUTTON_Init(Button_TypeDef Button, ButtonMode_TypeDef Button_Mode)
     NVIC_InitTypeDef NVIC_InitStructure;
 
     /* Enable the BUTTON Clock */
-    RCC_APB2PeriphClockCmd(BUTTON_CLK[Button] | RCC_APB2Periph_AFIO, ENABLE);
+    RCC_APB2PeriphClockCmd(BUTTON_GPIO_CLK[Button] | RCC_APB2Periph_AFIO, ENABLE);
 
     /* Configure Button pin as input floating */
     GPIO_InitStructure.GPIO_Mode = BUTTON_GPIO_MODE[Button];
-    GPIO_InitStructure.GPIO_Pin = BUTTON_PIN[Button];
-    GPIO_Init(BUTTON_PORT[Button], &GPIO_InitStructure);
+    GPIO_InitStructure.GPIO_Pin = BUTTON_GPIO_PIN[Button];
+    GPIO_Init(BUTTON_GPIO_PORT[Button], &GPIO_InitStructure);
 
     if (Button_Mode == BUTTON_MODE_EXTI)
     {
@@ -781,7 +741,7 @@ void BUTTON_EXTI_Config(Button_TypeDef Button, FunctionalState NewState)
     EXTI_InitTypeDef EXTI_InitStructure;
 
 	/* Connect Button EXTI Line to Button GPIO Pin */
-    GPIO_EXTILineConfig(BUTTON_PORT_SOURCE[Button], BUTTON_PIN_SOURCE[Button]);
+    GPIO_EXTILineConfig(BUTTON_GPIO_PORT_SOURCE[Button], BUTTON_GPIO_PIN_SOURCE[Button]);
 
 	/* Clear the EXTI line pending flag */
 	EXTI_ClearFlag(BUTTON_EXTI_LINE[Button]);
@@ -804,7 +764,7 @@ void BUTTON_EXTI_Config(Button_TypeDef Button, FunctionalState NewState)
   */
 uint8_t BUTTON_GetState(Button_TypeDef Button)
 {
-    return GPIO_ReadInputDataBit(BUTTON_PORT[Button], BUTTON_PIN[Button]);
+    return GPIO_ReadInputDataBit(BUTTON_GPIO_PORT[Button], BUTTON_GPIO_PIN[Button]);
 }
 
 /**
@@ -838,7 +798,7 @@ void CC3000_WIFI_Init(void)
 	RCC_APB2PeriphClockCmd(CC3000_WIFI_CS_GPIO_CLK | CC3000_WIFI_EN_GPIO_CLK, ENABLE);
 
 	/* Configure CC3000_WIFI pins: CS */
-	GPIO_InitStructure.GPIO_Pin = CC3000_WIFI_CS_PIN;
+	GPIO_InitStructure.GPIO_Pin = CC3000_WIFI_CS_GPIO_PIN;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
 	GPIO_Init(CC3000_WIFI_CS_GPIO_PORT, &GPIO_InitStructure);
@@ -847,7 +807,7 @@ void CC3000_WIFI_Init(void)
 	CC3000_CS_HIGH();
 
 	/* Configure CC3000_WIFI pins: Enable */
-	GPIO_InitStructure.GPIO_Pin = CC3000_WIFI_EN_PIN;
+	GPIO_InitStructure.GPIO_Pin = CC3000_WIFI_EN_GPIO_PIN;
 	GPIO_Init(CC3000_WIFI_EN_GPIO_PORT, &GPIO_InitStructure);
 
 	/* Disable CC3000 */
@@ -871,17 +831,17 @@ void CC3000_SPI_Init(void)
 	CC3000_SPI_CLK_CMD(CC3000_SPI_CLK, ENABLE);
 
 	/* Configure CC3000_SPI pins: SCK */
-	GPIO_InitStructure.GPIO_Pin = CC3000_SPI_SCK_PIN;
+	GPIO_InitStructure.GPIO_Pin = CC3000_SPI_SCK_GPIO_PIN;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
 	GPIO_Init(CC3000_SPI_SCK_GPIO_PORT, &GPIO_InitStructure);
 
 	/* Configure CC3000_SPI pins: MOSI */
-	GPIO_InitStructure.GPIO_Pin = CC3000_SPI_MOSI_PIN;
+	GPIO_InitStructure.GPIO_Pin = CC3000_SPI_MOSI_GPIO_PIN;
 	GPIO_Init(CC3000_SPI_MOSI_GPIO_PORT, &GPIO_InitStructure);
 
 	/* Configure CC3000_SPI pins: MISO */
-	GPIO_InitStructure.GPIO_Pin = CC3000_SPI_MISO_PIN;
+	GPIO_InitStructure.GPIO_Pin = CC3000_SPI_MISO_GPIO_PIN;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
 	GPIO_Init(CC3000_SPI_MISO_GPIO_PORT, &GPIO_InitStructure);
 
@@ -986,19 +946,19 @@ void CC3000_CS_LOW(void)
 	CC3000_SPI->CR1 &= ((uint16_t)0xFFBF);
 	sFLASH_CS_HIGH();
 	CC3000_SPI->CR1 = CC3000_SPI_CR | ((uint16_t)0x0040);
-	GPIO_ResetBits(CC3000_WIFI_CS_GPIO_PORT, CC3000_WIFI_CS_PIN);
+	GPIO_ResetBits(CC3000_WIFI_CS_GPIO_PORT, CC3000_WIFI_CS_GPIO_PIN);
 }
 
 /* Deselect CC3000: ChipSelect pin high */
 void CC3000_CS_HIGH(void)
 {
-	GPIO_SetBits(CC3000_WIFI_CS_GPIO_PORT, CC3000_WIFI_CS_PIN);
+	GPIO_SetBits(CC3000_WIFI_CS_GPIO_PORT, CC3000_WIFI_CS_GPIO_PIN);
 }
 
 /* CC3000 Hardware related callbacks passed to wlan_init */
 long CC3000_Read_Interrupt_Pin(void)
 {
-	return GPIO_ReadInputDataBit(CC3000_WIFI_INT_GPIO_PORT, CC3000_WIFI_INT_PIN );
+	return GPIO_ReadInputDataBit(CC3000_WIFI_INT_GPIO_PORT, CC3000_WIFI_INT_GPIO_PIN );
 }
 
 void CC3000_Interrupt_Enable(void)
@@ -1011,7 +971,7 @@ void CC3000_Interrupt_Enable(void)
 	RCC_APB2PeriphClockCmd(CC3000_WIFI_INT_GPIO_CLK | RCC_APB2Periph_AFIO, ENABLE);
 
 	/* Configure CC3000_WIFI pins: Interrupt */
-	GPIO_InitStructure.GPIO_Pin = CC3000_WIFI_INT_PIN;
+	GPIO_InitStructure.GPIO_Pin = CC3000_WIFI_INT_GPIO_PIN;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
 	GPIO_Init(CC3000_WIFI_INT_GPIO_PORT, &GPIO_InitStructure);
 
@@ -1057,11 +1017,11 @@ void CC3000_Write_Enable_Pin(unsigned char val)
 	/* Set WLAN Enable/Disable */
 	if (val != WLAN_DISABLE)
 	{
-		GPIO_SetBits(CC3000_WIFI_EN_GPIO_PORT, CC3000_WIFI_EN_PIN );
+		GPIO_SetBits(CC3000_WIFI_EN_GPIO_PORT, CC3000_WIFI_EN_GPIO_PIN );
 	}
 	else
 	{
-		GPIO_ResetBits(CC3000_WIFI_EN_GPIO_PORT, CC3000_WIFI_EN_PIN );
+		GPIO_ResetBits(CC3000_WIFI_EN_GPIO_PORT, CC3000_WIFI_EN_GPIO_PIN );
 	}
 }
 
@@ -1084,20 +1044,20 @@ void sFLASH_SPI_DeInit(void)
 	sFLASH_SPI_CLK_CMD(sFLASH_SPI_CLK, DISABLE);
 
 	/* Configure sFLASH_SPI pins: SCK */
-	GPIO_InitStructure.GPIO_Pin = sFLASH_SPI_SCK_PIN;
+	GPIO_InitStructure.GPIO_Pin = sFLASH_SPI_SCK_GPIO_PIN;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
 	GPIO_Init(sFLASH_SPI_SCK_GPIO_PORT, &GPIO_InitStructure);
 
 	/* Configure sFLASH_SPI pins: MISO */
-	GPIO_InitStructure.GPIO_Pin = sFLASH_SPI_MISO_PIN;
+	GPIO_InitStructure.GPIO_Pin = sFLASH_SPI_MISO_GPIO_PIN;
 	GPIO_Init(sFLASH_SPI_MISO_GPIO_PORT, &GPIO_InitStructure);
 
 	/* Configure sFLASH_SPI pins: MOSI */
-	GPIO_InitStructure.GPIO_Pin = sFLASH_SPI_MOSI_PIN;
+	GPIO_InitStructure.GPIO_Pin = sFLASH_SPI_MOSI_GPIO_PIN;
 	GPIO_Init(sFLASH_SPI_MOSI_GPIO_PORT, &GPIO_InitStructure);
 
-	/* Configure sFLASH_MEM_CS_PIN pin: sFLASH CS pin */
-	GPIO_InitStructure.GPIO_Pin = sFLASH_MEM_CS_PIN;
+	/* Configure sFLASH_MEM_CS_GPIO_PIN pin: sFLASH CS pin */
+	GPIO_InitStructure.GPIO_Pin = sFLASH_MEM_CS_GPIO_PIN;
 	GPIO_Init(sFLASH_MEM_CS_GPIO_PORT, &GPIO_InitStructure);
 }
 
@@ -1120,22 +1080,22 @@ void sFLASH_SPI_Init(void)
 	sFLASH_SPI_CLK_CMD(sFLASH_SPI_CLK, ENABLE);
 
 	/* Configure sFLASH_SPI pins: SCK */
-	GPIO_InitStructure.GPIO_Pin = sFLASH_SPI_SCK_PIN;
+	GPIO_InitStructure.GPIO_Pin = sFLASH_SPI_SCK_GPIO_PIN;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
 	GPIO_Init(sFLASH_SPI_SCK_GPIO_PORT, &GPIO_InitStructure);
 
 	/* Configure sFLASH_SPI pins: MOSI */
-	GPIO_InitStructure.GPIO_Pin = sFLASH_SPI_MOSI_PIN;
+	GPIO_InitStructure.GPIO_Pin = sFLASH_SPI_MOSI_GPIO_PIN;
 	GPIO_Init(sFLASH_SPI_MOSI_GPIO_PORT, &GPIO_InitStructure);
 
 	/* Configure sFLASH_SPI pins: MISO */
-	GPIO_InitStructure.GPIO_Pin = sFLASH_SPI_MISO_PIN;
+	GPIO_InitStructure.GPIO_Pin = sFLASH_SPI_MISO_GPIO_PIN;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
 	GPIO_Init(sFLASH_SPI_MISO_GPIO_PORT, &GPIO_InitStructure);
 
-	/* Configure sFLASH_MEM_CS_PIN pin: sFLASH CS pin */
-	GPIO_InitStructure.GPIO_Pin = sFLASH_MEM_CS_PIN;
+	/* Configure sFLASH_MEM_CS_GPIO_PIN pin: sFLASH CS pin */
+	GPIO_InitStructure.GPIO_Pin = sFLASH_MEM_CS_GPIO_PIN;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
 	GPIO_Init(sFLASH_MEM_CS_GPIO_PORT, &GPIO_InitStructure);
@@ -1167,13 +1127,13 @@ void sFLASH_CS_LOW(void)
 	sFLASH_SPI->CR1 &= ((uint16_t)0xFFBF);
 	CC3000_CS_HIGH();
 	sFLASH_SPI->CR1 = sFLASH_SPI_CR | ((uint16_t)0x0040);
-	GPIO_ResetBits(sFLASH_MEM_CS_GPIO_PORT, sFLASH_MEM_CS_PIN);
+	GPIO_ResetBits(sFLASH_MEM_CS_GPIO_PORT, sFLASH_MEM_CS_GPIO_PIN);
 }
 
 /* Deselect sFLASH: Chip Select pin high */
 void sFLASH_CS_HIGH(void)
 {
-	GPIO_SetBits(sFLASH_MEM_CS_GPIO_PORT, sFLASH_MEM_CS_PIN);
+	GPIO_SetBits(sFLASH_MEM_CS_GPIO_PORT, sFLASH_MEM_CS_GPIO_PIN);
 }
 
 /*******************************************************************************
@@ -1189,8 +1149,8 @@ void USB_Disconnect_Config(void)
 	/* Enable USB_DISCONNECT GPIO clock */
 	RCC_APB2PeriphClockCmd(USB_DISCONNECT_GPIO_CLK, ENABLE);
 
-	/* USB_DISCONNECT_PIN used as USB pull-up */
-	GPIO_InitStructure.GPIO_Pin = USB_DISCONNECT_PIN;
+	/* USB_DISCONNECT_GPIO_PIN used as USB pull-up */
+	GPIO_InitStructure.GPIO_Pin = USB_DISCONNECT_GPIO_PIN;
 	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_OD;
 	GPIO_Init(USB_DISCONNECT_GPIO_PORT, &GPIO_InitStructure);
@@ -1273,11 +1233,11 @@ void USB_Cable_Config (FunctionalState NewState)
 {
 	if (NewState != DISABLE)
 	{
-		GPIO_ResetBits(USB_DISCONNECT_GPIO_PORT, USB_DISCONNECT_PIN);
+		GPIO_ResetBits(USB_DISCONNECT_GPIO_PORT, USB_DISCONNECT_GPIO_PIN);
 	}
 	else
 	{
-		GPIO_SetBits(USB_DISCONNECT_GPIO_PORT, USB_DISCONNECT_PIN);
+		GPIO_SetBits(USB_DISCONNECT_GPIO_PORT, USB_DISCONNECT_GPIO_PIN);
 	}
 }
 
@@ -1399,6 +1359,29 @@ void FLASH_WriteProtection_Disable(uint32_t FLASH_Pages)
 	}
 }
 
+void FLASH_Erase(void)
+{
+	FLASHStatus = FLASH_COMPLETE;
+
+	/* Unlock the Flash Program Erase Controller */
+	FLASH_Unlock();
+
+	/* Define the number of Internal Flash pages to be erased */
+	NbrOfPage = (INTERNAL_FLASH_END_ADDRESS - CORE_FW_ADDRESS) / INTERNAL_FLASH_PAGE_SIZE;
+
+	/* Clear All pending flags */
+	FLASH_ClearFlag(FLASH_FLAG_EOP | FLASH_FLAG_PGERR | FLASH_FLAG_WRPRTERR);
+
+	/* Erase the Internal Flash pages */
+	for (EraseCounter = 0; (EraseCounter < NbrOfPage) && (FLASHStatus == FLASH_COMPLETE); EraseCounter++)
+	{
+		FLASHStatus = FLASH_ErasePage(CORE_FW_ADDRESS + (INTERNAL_FLASH_PAGE_SIZE * EraseCounter));
+	}
+
+	/* Locks the FLASH Program Erase Controller */
+	FLASH_Lock();
+}
+
 void FLASH_Backup(uint32_t sFLASH_Address)
 {
 #ifdef SPARK_SFLASH_ENABLE
@@ -1446,25 +1429,13 @@ void FLASH_Restore(uint32_t sFLASH_Address)
     /* Initialize SPI Flash */
 	sFLASH_Init();
 
-	FLASHStatus = FLASH_COMPLETE;
-
-	/* Unlock the Flash Program Erase Controller */
-	FLASH_Unlock();
-
-	/* Define the number of Internal Flash pages to be erased */
-	NbrOfPage = (INTERNAL_FLASH_END_ADDRESS - CORE_FW_ADDRESS) / INTERNAL_FLASH_PAGE_SIZE;
-
-	/* Clear All pending flags */
-	FLASH_ClearFlag(FLASH_FLAG_EOP | FLASH_FLAG_PGERR | FLASH_FLAG_WRPRTERR);
-
-	/* Erase the Internal Flash pages */
-	for (EraseCounter = 0; (EraseCounter < NbrOfPage) && (FLASHStatus == FLASH_COMPLETE); EraseCounter++)
-	{
-		FLASHStatus = FLASH_ErasePage(CORE_FW_ADDRESS + (INTERNAL_FLASH_PAGE_SIZE * EraseCounter));
-	}
+	FLASH_Erase();
 
 	Internal_Flash_Address = CORE_FW_ADDRESS;
 	External_Flash_Address = sFLASH_Address;
+
+	/* Unlock the Flash Program Erase Controller */
+	FLASH_Unlock();
 
 	/* Program Internal Flash Bank1 */
 	while ((Internal_Flash_Address < INTERNAL_FLASH_END_ADDRESS) && (FLASHStatus == FLASH_COMPLETE))
@@ -1491,12 +1462,10 @@ void FLASH_Begin(uint32_t sFLASH_Address)
 {
 #ifdef SPARK_SFLASH_ENABLE
 
-#if defined (USE_SPARK_CORE_V02)
 	LED_SetRGBColor(RGB_COLOR_MAGENTA);
     LED_On(LED_RGB);
-#endif
 
-   OTA_FLASHED_Status_SysFlag = 0x0000;
+    OTA_FLASHED_Status_SysFlag = 0x0000;
 	//FLASH_OTA_Update_SysFlag = 0x5555;
 	Save_SystemFlags();
 	//BKP_WriteBackupRegister(BKP_DR10, 0x5555);
@@ -1556,11 +1525,7 @@ void FLASH_Update(uint8_t *pBuffer, uint32_t bufferSize)
 		sFLASH_WriteBuffer(External_Flash_Data, External_Flash_Address, 4);
 	}
 
-#if defined (USE_SPARK_CORE_V01)
-	LED_Toggle(LED2);
-#elif defined (USE_SPARK_CORE_V02)
 	LED_Toggle(LED_RGB);
-#endif
 
 #endif
 }
@@ -1577,6 +1542,48 @@ void FLASH_End(void)
     USB_Cable_Config(DISABLE);
 
 	NVIC_SystemReset();
+
+#endif
+}
+
+void FLASH_Read_ServerAddress(ServerAddress *server_addr)
+{
+#ifdef SPARK_SFLASH_ENABLE
+
+  uint8_t buf[EXTERNAL_FLASH_SERVER_DOMAIN_LENGTH];
+  sFLASH_ReadBuffer(buf,
+      EXTERNAL_FLASH_SERVER_DOMAIN_ADDRESS,
+      EXTERNAL_FLASH_SERVER_DOMAIN_LENGTH);
+
+  // Internet address stored on external flash may be
+  // either a domain name or an IP address.
+  // It's stored in a type-length-value encoding.
+  // First byte is type, second byte is length, the rest is value.
+
+  switch (buf[0])
+  {
+    case IP_ADDRESS:
+      server_addr->addr_type = IP_ADDRESS;
+      server_addr->ip = (buf[2] << 24) | (buf[3] << 16) |
+                        (buf[4] << 8)  |  buf[5];
+      break;
+
+    case DOMAIN_NAME:
+      if (buf[1] <= EXTERNAL_FLASH_SERVER_DOMAIN_LENGTH - 2)
+      {
+        server_addr->addr_type = DOMAIN_NAME;
+        memcpy(server_addr->domain, buf + 2, buf[1]);
+
+        // null terminate string
+        char *p = server_addr->domain + buf[1];
+        *p = 0;
+        break;
+      }
+      // else fall through to default
+
+    default:
+      server_addr->addr_type = INVALID_INTERNET_ADDRESS;
+  }
 
 #endif
 }
@@ -1605,30 +1612,35 @@ void FLASH_Read_CorePrivateKey(uint8_t *keyBuffer)
 #endif
 }
 
-void Factory_Flash_Reset(void)
+void FACTORY_Flash_Reset(void)
 {
-    //First take backup of the current application firmware to External Flash
-    FLASH_Backup(EXTERNAL_FLASH_BKP_ADDRESS);
-
     //Restore the Factory programmed application firmware from External Flash
 	FLASH_Restore(EXTERNAL_FLASH_FAC_ADDRESS);
 
 	Finish_Update();
 }
 
-void OTA_Flash_Update(void)
+void BACKUP_Flash_Reset(void)
 {
-    //First take backup of the current application firmware to External Flash
-    FLASH_Backup(EXTERNAL_FLASH_BKP_ADDRESS);
+    //Restore the Backup programmed application firmware from External Flash
+	FLASH_Restore(EXTERNAL_FLASH_BKP_ADDRESS);
 
-   FLASH_OTA_Update_SysFlag = 0x5555;
+	Finish_Update();
+}
+
+void OTA_Flash_Reset(void)
+{
+	//First take backup of the current application firmware to External Flash
+	FLASH_Backup(EXTERNAL_FLASH_BKP_ADDRESS);
+
+	FLASH_OTA_Update_SysFlag = 0x5555;
 	Save_SystemFlags();
 	BKP_WriteBackupRegister(BKP_DR10, 0x5555);
 
-    //Restore the OTA programmed application firmware from External Flash
+	//Restore the OTA programmed application firmware from External Flash
 	FLASH_Restore(EXTERNAL_FLASH_OTA_ADDRESS);
 
-    OTA_FLASHED_Status_SysFlag = 0x0001;
+	OTA_FLASHED_Status_SysFlag = 0x0001;
 
 	Finish_Update();
 }
@@ -1733,4 +1745,16 @@ void Get_Unique_Device_ID(uint8_t *Device_ID)
   *Device_ID++ = (uint8_t)((Device_IDx & 0xFF00) >> 8);
   *Device_ID++ = (uint8_t)((Device_IDx & 0xFF0000) >> 16);
   *Device_ID = (uint8_t)((Device_IDx & 0xFF000000) >> 24);
+}
+
+static volatile system_tick_t system_1ms_tick = 0;
+
+void System1MsTick(void)
+{
+   system_1ms_tick++;
+}
+
+system_tick_t GetSystem1MsTick()
+{
+ return system_1ms_tick;
 }

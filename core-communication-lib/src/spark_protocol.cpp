@@ -144,7 +144,7 @@ bool SparkProtocol::event_loop(void)
 
     if (updating)
     {
-      unsigned int millis_since_last_chunk = callback_millis() - last_chunk_millis;
+      system_tick_t millis_since_last_chunk = callback_millis() - last_chunk_millis;
 
       if (3000 < millis_since_last_chunk)
       {
@@ -162,7 +162,7 @@ bool SparkProtocol::event_loop(void)
     }
     else
     {
-      unsigned int millis_since_last_message = callback_millis() - last_message_millis;
+      system_tick_t millis_since_last_message = callback_millis() - last_message_millis;
       if (expecting_ping_ack)
       {
         if (10000 < millis_since_last_message)
@@ -199,7 +199,7 @@ int SparkProtocol::blocking_send(const unsigned char *buf, int length)
   int bytes_or_error;
   int byte_count = 0;
 
-  unsigned int _millis = callback_millis();
+  system_tick_t _millis = callback_millis();
 
   while (length > byte_count)
   {
@@ -231,7 +231,7 @@ int SparkProtocol::blocking_receive(unsigned char *buf, int length)
   int bytes_or_error;
   int byte_count = 0;
 
-  unsigned int _millis = callback_millis();
+  system_tick_t _millis = callback_millis();
 
   while (length > byte_count)
   {
@@ -277,8 +277,8 @@ CoAPMessageType::Enum
       {
         case 'v': return CoAPMessageType::VARIABLE_REQUEST;
         case 'd': return CoAPMessageType::DESCRIBE;
-        default: return CoAPMessageType::ERROR;
-      }
+        default: break;
+      } break;
     case CoAPCode::POST:
       switch (path)
       {
@@ -286,8 +286,8 @@ CoAPMessageType::Enum
         case 'f': return CoAPMessageType::FUNCTION_CALL;
         case 'u': return CoAPMessageType::UPDATE_BEGIN;
         case 'c': return CoAPMessageType::CHUNK;
-        default: return CoAPMessageType::ERROR;
-      }
+        default: break;
+      } break;
     case CoAPCode::PUT:
       switch (path)
       {
@@ -296,13 +296,18 @@ CoAPMessageType::Enum
         case 's':
           if (buf[8]) return CoAPMessageType::SIGNAL_START;
           else return CoAPMessageType::SIGNAL_STOP;
-        default: return CoAPMessageType::ERROR;
-      }
+        default: break;
+      } break;
     case CoAPCode::EMPTY:
-      return CoAPMessageType::EMPTY;
+      switch (CoAP::type(buf))
+      {
+        case CoAPType::CON: return CoAPMessageType::PING;
+        default: return CoAPMessageType::EMPTY_ACK;
+      } break;
     default:
-      return CoAPMessageType::ERROR;
+      break;
   }
+  return CoAPMessageType::ERROR;
 }
 
 void SparkProtocol::hello(unsigned char *buf, bool newly_upgraded)
@@ -416,12 +421,13 @@ void SparkProtocol::variable_value(unsigned char *buf,
   encrypt(buf, 16);
 }
 
-void SparkProtocol::variable_value(unsigned char *buf,
-                                   unsigned char token,
-                                   unsigned char message_id_msb,
-                                   unsigned char message_id_lsb,
-                                   const void *return_value,
-                                   int length)
+// Returns the length of the buffer to send
+int SparkProtocol::variable_value(unsigned char *buf,
+                                  unsigned char token,
+                                  unsigned char message_id_msb,
+                                  unsigned char message_id_lsb,
+                                  const void *return_value,
+                                  int length)
 {
   buf[0] = 0x61; // acknowledgment, one-byte token
   buf[1] = 0x45; // response code 2.05 CONTENT
@@ -438,72 +444,42 @@ void SparkProtocol::variable_value(unsigned char *buf,
   memset(buf + msglen, pad, pad); // PKCS #7 padding
 
   encrypt(buf, buflen);
+
+  return buflen;
 }
 
-void SparkProtocol::event(unsigned char *buf,
-                          const char *event_name,
-                          int event_name_length)
+// Returns true on success, false on sending timeout or rate-limiting failure
+bool SparkProtocol::send_event(const char *event_name, const char *data,
+                               int ttl, EventType::Enum event_type)
 {
-  // truncate event names that are too long for 4-bit CoAP option length
-  if (event_name_length > 12)
-    event_name_length = 12;
+  static system_tick_t recent_event_ticks[5] = {
+    (system_tick_t) -1000, (system_tick_t) -1000,
+    (system_tick_t) -1000, (system_tick_t) -1000,
+    (system_tick_t) -1000 };
+  static int evt_tick_idx = 0;
 
-  unsigned short message_id = next_message_id();
+  system_tick_t now = recent_event_ticks[evt_tick_idx] = callback_millis();
+  evt_tick_idx++;
+  evt_tick_idx %= 5;
+  if (now - recent_event_ticks[evt_tick_idx] < 1000)
+  {
+    // exceeded allowable burst of 4 events per second
+    return false;
+  }
 
-  buf[0] = 0x50; // non-confirmable, no token
-  buf[1] = 0x02; // code 0.02 POST request
-  buf[2] = message_id >> 8;
-  buf[3] = message_id & 0xff;
-  buf[4] = 0xb1; // one-byte Uri-Path option
-  buf[5] = 'e';
-  buf[6] = event_name_length;
-  
-  memcpy(buf + 7, event_name, event_name_length);
+  uint16_t msg_id = next_message_id();
+  size_t msglen = event(queue + 2, msg_id, event_name, data, ttl, event_type);
 
-  int msglen = 7 + event_name_length;
-  int buflen = (msglen & ~15) + 16;
+  size_t buflen = (msglen & ~15) + 16;
   char pad = buflen - msglen;
-  memset(buf + msglen, pad, pad); // PKCS #7 padding
+  memset(queue + 2 + msglen, pad, pad); // PKCS #7 padding
 
-  encrypt(buf, buflen);
-}
+  encrypt(queue + 2, buflen);
 
-void SparkProtocol::event(unsigned char *buf,
-                          const char *event_name,
-                          int event_name_length,
-                          const char *data,
-                          int data_length)
-{
-  // truncate event names that are too long for 4-bit CoAP option length
-  if (event_name_length > 12)
-    event_name_length = 12;
+  queue[0] = (buflen >> 8) & 0xff;
+  queue[1] = buflen & 0xff;
 
-  // truncate data to fit in one network packet
-  if (data_length > 1024)
-    data_length = 1024;
-
-  unsigned short message_id = next_message_id();
-
-  buf[0] = 0x50; // non-confirmable, no token
-  buf[1] = 0x02; // code 0.02 POST request
-  buf[2] = message_id >> 8;
-  buf[3] = message_id & 0xff;
-  buf[4] = 0xb1; // one-byte Uri-Path option
-  buf[5] = 'e';
-  buf[6] = event_name_length;
-  
-  memcpy(buf + 7, event_name, event_name_length);
-
-  buf[7 + event_name_length] = 0xff; // payload marker
-
-  memcpy(buf + 8 + event_name_length, data, data_length);
-
-  int msglen = 8 + event_name_length + data_length;
-  int buflen = (msglen & ~15) + 16;
-  char pad = buflen - msglen;
-  memset(buf + msglen, pad, pad); // PKCS #7 padding
-
-  encrypt(buf, buflen);
+  return (0 <= blocking_send(queue, buflen + 2));
 }
 
 void SparkProtocol::chunk_received(unsigned char *buf,
@@ -743,6 +719,9 @@ bool SparkProtocol::handle_received_message(void)
   last_message_millis = callback_millis();
   expecting_ping_ack = false;
   int len = queue[0] << 8 | queue[1];
+  if (len > (int)arraySize(queue)) { // Todo add sanity check on data i.e. CRC
+      return false;
+  }
   if (0 > blocking_receive(queue, len))
   {
     // error
@@ -834,7 +813,7 @@ bool SparkProtocol::handle_received_message(void)
       memset(variable_key + variable_key_length, 0, 13 - variable_key_length);
 
       queue[0] = 0;
-      queue[1] = 16;
+      queue[1] = 16; // default buffer length
 
       // get variable value according to type using the descriptor
       SparkReturnType::Enum var_type = descriptor.variable_type(variable_key);
@@ -851,7 +830,17 @@ bool SparkProtocol::handle_received_message(void)
       else if(SparkReturnType::STRING == var_type)
       {
         char *str_val = (char *)descriptor.get_variable(variable_key);
-        variable_value(queue + 2, token, queue[2], queue[3], str_val, strlen(str_val));
+
+        // 2-byte leading length, 16 potential padding bytes
+        int max_length = QUEUE_SIZE - 2 - 16;
+        int str_length = strlen(str_val);
+        if (str_length > max_length) {
+          str_length = max_length;
+        }
+
+        int buf_size = variable_value(queue + 2, token, queue[2], queue[3], str_val, str_length);
+        queue[1] = buf_size & 0xff;
+        queue[0] = (buf_size >> 8) & 0xff;
       }
       else if(SparkReturnType::DOUBLE == var_type)
       {
@@ -859,7 +848,8 @@ bool SparkProtocol::handle_received_message(void)
         variable_value(queue + 2, token, queue[2], queue[3], *double_val);
       }
 
-      if (0 > blocking_send(queue, 18))
+      // buffer length may have changed if variable is a long string
+      if (0 > blocking_send(queue, (queue[0] << 8) + queue[1] + 2))
       {
         // error
         return false;
@@ -969,6 +959,18 @@ bool SparkProtocol::handle_received_message(void)
       descriptor.ota_upgrade_status_sent();
       break;
 
+    case CoAPMessageType::PING:
+      *msg_to_send = 0;
+      *(msg_to_send + 1) = 16;
+      empty_ack(msg_to_send + 2, queue[2], queue[3]);
+      if (0 > blocking_send(msg_to_send, 18))
+      {
+        // error
+        return false;
+      }
+      break;
+
+    case CoAPMessageType::EMPTY_ACK:
     case CoAPMessageType::ERROR:
     default:
       ; // drop it on the floor

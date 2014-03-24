@@ -10,6 +10,7 @@ class LED
         void rgb(int r, int g, int b);
         void intensity(int value);
         void color(String name);
+        void dim();
         void fade();
         void blank();
         void blink();
@@ -27,6 +28,7 @@ class LED
         int _blink;
         bool _fading;
         bool _blinking;
+        int _intensity;
         unsigned long _now;
         unsigned long _fadeTimer;
         unsigned long _blinkTimer;

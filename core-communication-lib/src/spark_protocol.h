@@ -28,8 +28,15 @@
 
 #include "spark_descriptor.h"
 #include "coap.h"
+#include "events.h"
 #include "tropicssl/rsa.h"
 #include "tropicssl/aes.h"
+
+#if !defined(arraySize)
+#   define arraySize(a)            (sizeof((a))/sizeof((a[0])))
+#endif
+
+typedef unsigned long system_tick_t; // This needs to match the definition of millis
 
 namespace ProtocolState {
   enum Enum {
@@ -59,7 +66,7 @@ struct SparkCallbacks
   long unsigned int (*calculate_crc)(unsigned char *buf, long unsigned int buflen);
   void (*save_firmware_chunk)(unsigned char *buf, long unsigned int buflen);
   void (*signal)(bool on);
-  unsigned int (*millis)();
+  system_tick_t (*millis)();
 };
 
 class SparkProtocol
@@ -68,6 +75,9 @@ class SparkProtocol
     static const int MAX_FUNCTION_ARG_LENGTH = 64;
     static const int MAX_FUNCTION_KEY_LENGTH = 12;
     static const int MAX_VARIABLE_KEY_LENGTH = 12;
+    static const int MAX_EVENT_NAME_LENGTH = 64;
+    static const int MAX_EVENT_DATA_LENGTH = 64;
+    static const int MAX_EVENT_TTL_SECONDS = 16777215;
     static int presence_announcement(unsigned char *buf, const char *id);
 
     SparkProtocol();
@@ -99,17 +109,11 @@ class SparkProtocol
     void variable_value(unsigned char *buf, unsigned char token,
                         unsigned char message_id_msb, unsigned char message_id_lsb,
                         double return_value);
-    void variable_value(unsigned char *buf, unsigned char token,
-                        unsigned char message_id_msb, unsigned char message_id_lsb,
-                        const void *return_value, int length);
-    void event(unsigned char *buf,
-               const char *event_name,
-               int event_name_length);
-    void event(unsigned char *buf,
-               const char *event_name,
-               int event_name_length,
-               const char *data,
-               int data_length);
+    int variable_value(unsigned char *buf, unsigned char token,
+                       unsigned char message_id_msb, unsigned char message_id_lsb,
+                       const void *return_value, int length);
+    bool send_event(const char *event_name, const char *data,
+                    int ttl, EventType::Enum event_type);
     void chunk_received(unsigned char *buf, unsigned char token,
                         ChunkReceivedCode::Enum code);
     void chunk_missed(unsigned char *buf, unsigned short chunk_index);
@@ -140,7 +144,7 @@ class SparkProtocol
     long unsigned int (*callback_calculate_crc)(unsigned char *buf, long unsigned int buflen);
     void (*callback_save_firmware_chunk)(unsigned char *buf, long unsigned int buflen);
     void (*callback_signal)(bool on);
-    unsigned int (*callback_millis)();
+    system_tick_t (*callback_millis)();
 
     SparkDescriptor descriptor;
 
@@ -149,8 +153,8 @@ class SparkProtocol
     unsigned char iv_receive[16];
     unsigned char salt[8];
     unsigned short _message_id;
-    unsigned int last_message_millis;
-    unsigned int last_chunk_millis;
+    system_tick_t last_message_millis;
+    system_tick_t last_chunk_millis;
     unsigned short chunk_index;
     bool expecting_ping_ack;
     bool initialized;

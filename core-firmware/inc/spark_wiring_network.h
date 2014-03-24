@@ -1,9 +1,9 @@
 /**
  ******************************************************************************
  * @file    spark_wiring_network.h
- * @author  Satish Nair
+ * @author  Satish Nair, Timothy Brown
  * @version V1.0.0
- * @date    10-Nov-2013
+ * @date    18-Mar-2014
  * @brief   Header for spark_wiring_network.cpp module
  ******************************************************************************
   Copyright (c) 2013 Spark Labs, Inc.  All rights reserved.
@@ -38,9 +38,15 @@ public:
 	IPAddress subnetMask();
 	IPAddress gatewayIP();
 	char* SSID();
+	int8_t RSSI();
 
 	friend class TCPClient;
 	friend class TCPServer;
+
+private:
+	uint32_t _functionStart;
+	uint8_t _loopCount;
+	int8_t _returnValue;
 };
 
 extern NetworkClass Network;

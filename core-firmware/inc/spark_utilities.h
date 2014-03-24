@@ -29,24 +29,28 @@
 
 #include "main.h"
 #include "spark_wiring_string.h"
+#include "spark_wiring_time.h"
 
-#define BYTE_N(x,n)					(((x) >> n*8) & 0x000000FF)
+#define BYTE_N(x,n)						(((x) >> n*8) & 0x000000FF)
 
-#define SPARK_BUF_LEN				600
+#define SPARK_BUF_LEN					600
 
 //#define SPARK_SERVER_IP				"54.235.79.249"
-#define SPARK_SERVER_PORT			5683
+#define SPARK_SERVER_PORT				5683
 
-#define USER_VAR_MAX_COUNT			10
-#define USER_VAR_KEY_LENGTH			12
+#define TIMING_FLASH_UPDATE_TIMEOUT		30000	//30sec
 
-#define USER_FUNC_MAX_COUNT			4
-#define USER_FUNC_KEY_LENGTH		12
-#define USER_FUNC_ARG_LENGTH		64
+#define SPARK_LOOP_DELAY_MILLIS			1000	//1sec
 
-#define USER_EVENT_MAX_COUNT		3
-#define USER_EVENT_NAME_LENGTH		16
-#define USER_EVENT_RESULT_LENGTH	64
+#define USER_VAR_MAX_COUNT				10
+#define USER_VAR_KEY_LENGTH				12
+
+#define USER_FUNC_MAX_COUNT				4
+#define USER_FUNC_KEY_LENGTH			12
+#define USER_FUNC_ARG_LENGTH			64
+
+#define USER_EVENT_NAME_LENGTH			64
+#define USER_EVENT_DATA_LENGTH			64
 
 typedef enum
 {
@@ -57,6 +61,11 @@ typedef enum
 {
 	BOOLEAN = 1, INT = 2, STRING = 4, DOUBLE = 9
 } Spark_Data_TypeDef;
+
+typedef enum
+{
+	PUBLIC = 0, PRIVATE = 1
+} Spark_Event_TypeDef;
 
 class RGBClass {
 private:
@@ -72,7 +81,14 @@ class SparkClass {
 public:
 	static void variable(const char *varKey, void *userVar, Spark_Data_TypeDef userVarType);
 	static void function(const char *funcKey, int (*pFunc)(String paramString));
-	static void event(const char *eventName, char *eventResult);
+	static void publish(const char *eventName);
+	static void publish(const char *eventName, const char *eventData);
+	static void publish(const char *eventName, const char *eventData, int ttl);
+	static void publish(const char *eventName, const char *eventData, int ttl, Spark_Event_TypeDef eventType);
+	static void publish(String eventName);
+	static void publish(String eventName, String eventData);
+	static void publish(String eventName, String eventData, int ttl);
+	static void publish(String eventName, String eventData, int ttl, Spark_Event_TypeDef eventType);
 	static void sleep(Spark_Sleep_TypeDef sleepMode, long seconds);
 	static void sleep(long seconds);
 	static bool connected(void);
@@ -101,12 +117,11 @@ int Spark_Handshake(void);
 bool Spark_Communication_Loop(void);
 void Multicast_Presence_Announcement(void);
 void Spark_Signal(bool on);
+void Spark_SetTime(unsigned long dateTime);
 
 int userVarType(const char *varKey);
 void *getUserVar(const char *varKey);
 int userFuncSchedule(const char *funcKey, const char *paramString);
-
-void userEventSend(void);
 
 long socket_connect(long sd, const sockaddr *addr, long addrlen);
 

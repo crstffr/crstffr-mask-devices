@@ -15,12 +15,23 @@ Button::Button(int pin, PinMode mode) {
         _on = HIGH;
         _off = LOW;
     }
+    digitalWrite(pin, _off);
 }
 
 char Button::state() {
     char out = '-';
     _now = millis();
+
     _val = digitalRead(_pin);
+
+    /*
+    if (_pin <= 7) {
+        _val = digitalRead(_pin);
+    } else {
+        _val = analogRead(_pin);
+    }
+    */
+
     if (!_down && !_held && _val == _on) {
         _down = true;
         _timer = millis();

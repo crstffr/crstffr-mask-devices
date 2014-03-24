@@ -24,6 +24,7 @@ class MyTCP
         char ACK;
         char BEL;
         char DLE;
+        char ETB;
         int  port;
         bool ready;
         long timeout;

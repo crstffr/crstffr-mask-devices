@@ -46,7 +46,7 @@ extern "C" {
 #define WLAN_TIMEOUT_FILE_OFFSET	2
 #define ERROR_COUNT_FILE_OFFSET		3
 
-#define TIMING_SPARK_COMM_TIMEOUT	30000	//30sec
+#define MAX_SOCK_NUM				8
 
 void Set_NetApp_Timeout(void);
 void Clear_NetApp_Dhcp(void);
@@ -58,33 +58,39 @@ char *WLAN_Firmware_Patch(unsigned long *length);
 char *WLAN_Driver_Patch(unsigned long *length);
 char *WLAN_BootLoader_Patch(unsigned long *length);
 
+uint32_t SPARK_WLAN_SetNetWatchDog(uint32_t timeOutInuS);
 void SPARK_WLAN_Setup(void (*presence_announcement_callback)(void));
 void SPARK_WLAN_Loop(void);
-void SPARK_WLAN_Timing(void);
 
 /* Spark Cloud APIs */
 extern int Spark_Connect(void);
 extern int Spark_Disconnect(void);
 extern int Spark_Process_API_Response(void);
 
+extern volatile uint32_t TimingFlashUpdateTimeout;
+
 extern tNetappIpconfigRetArgs ip_config;
 
-extern __IO uint32_t TimingSparkCommTimeout;
+extern volatile uint8_t WLAN_DHCP;
+extern volatile uint8_t SPARK_WLAN_SETUP;
+extern volatile uint8_t SPARK_WLAN_RESET;
+extern volatile uint8_t SPARK_WLAN_SLEEP;
+extern volatile uint8_t SPARK_WLAN_STARTED;
+extern volatile uint8_t SPARK_CLOUD_CONNECT;
+extern volatile uint8_t SPARK_CLOUD_SOCKETED;
+extern volatile uint8_t SPARK_CLOUD_CONNECTED;
+extern volatile uint8_t SPARK_FLASH_UPDATE;
+extern volatile uint8_t SPARK_LED_FADE;
 
-extern uint8_t WLAN_DHCP;
-extern __IO uint8_t SPARK_WLAN_RESET;
-extern __IO uint8_t SPARK_WLAN_SLEEP;
-extern __IO uint8_t SPARK_SOCKET_HANDSHAKE;
-extern __IO uint8_t SPARK_SOCKET_CONNECTED;
-extern __IO uint8_t SPARK_HANDSHAKE_COMPLETED;
-extern __IO uint8_t SPARK_FLASH_UPDATE;
-extern __IO uint8_t SPARK_LED_FADE;
+extern volatile uint8_t WLAN_DELETE_PROFILES;
+extern volatile uint8_t WLAN_SMART_CONFIG_START;
 
-extern uint8_t WLAN_DELETE_PROFILES;
-extern uint8_t WLAN_SMART_CONFIG_START;
+extern volatile uint8_t Spark_Error_Count;
+extern volatile uint8_t Cloud_Handshake_Error_Count;
 
-extern __IO uint8_t Spark_Error_Count;
+extern volatile system_tick_t spark_loop_total_millis;
 
+extern long sparkSocket;
 }
 
 #endif  /*__SPARK_WLAN_H*/

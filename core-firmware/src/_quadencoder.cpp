@@ -3,8 +3,8 @@
 
 QuadEncoder::QuadEncoder(int pin1, int pin2)
 {
-  pinMode(pin1, INPUT);
-  pinMode(pin2, INPUT);
+  pinMode(pin1, INPUT_PULLUP);
+  pinMode(pin2, INPUT_PULLUP);
   digitalWrite(pin1, HIGH);
   digitalWrite(pin2, HIGH);
   _inputPin1=pin1;

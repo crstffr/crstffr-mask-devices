@@ -4,6 +4,8 @@
  * @author  Satish Nair, Zachary Crockett and Mohit Bhoite
  * @version V1.0.0
  * @date    13-March-2013
+ *
+ * Updated: 14-Feb-2014 David Sidrane <david_s5@usa.net>
  * @brief   
  ******************************************************************************
   Copyright (c) 2013 Spark Labs, Inc.  All rights reserved.
@@ -23,6 +25,7 @@
   ******************************************************************************
  */
 #include "spark_utilities.h"
+#include "spark_wiring.h"
 #include "socket.h"
 #include "netapp.h"
 #include "string.h"
@@ -31,19 +34,13 @@
 
 SparkProtocol spark_protocol;
 
-long sparkSocket;
+#define INVALID_SOCKET (-1)
+
+long sparkSocket = INVALID_SOCKET;
 sockaddr tSocketAddr;
 
-timeval timeout;
-_types_fd_set_cc3000 readSet;
+//char digits[] = "0123456789";
 
-char digits[] = "0123456789";
-
-int total_bytes_received = 0;
-
-uint32_t chunkIndex;
-
-extern unsigned int millis();
 extern uint8_t LED_RGB_BRIGHTNESS;
 
 // LED_Signaling_Override
@@ -56,7 +53,6 @@ int VIBGYOR_Index;
 
 int User_Var_Count;
 int User_Func_Count;
-int User_Event_Count;
 
 struct User_Var_Lookup_Table_t
 {
@@ -73,14 +69,6 @@ struct User_Func_Lookup_Table_t
 	int userFuncRet;
 	bool userFuncSchedule;
 } User_Func_Lookup_Table[USER_FUNC_MAX_COUNT];
-
-struct User_Event_Lookup_Table_t
-{
-	char userEventName[USER_EVENT_NAME_LENGTH];
-	char userEventResult[USER_EVENT_RESULT_LENGTH];
-	bool userEventSchedule;
-} User_Event_Lookup_Table[USER_EVENT_MAX_COUNT];
-
 
 /*
 static unsigned char uitoa(unsigned int cNum, char *cString);
@@ -111,7 +99,9 @@ bool RGBClass::controlled(void)
 void RGBClass::control(bool override)
 {
 #if !defined (RGB_NOTIFICATIONS_ON)
-	if (override)
+	if(override == _control)
+		return;
+	else if (override)
 		LED_Signaling_Start();
 	else
 		LED_Signaling_Stop();
@@ -126,16 +116,18 @@ void RGBClass::color(int red, int green, int blue)
 	if (true != _control)
 		return;
 
-	TIM1->CCR2 = (uint16_t)((red   * LED_RGB_BRIGHTNESS * (TIM1->ARR + 1)) >> 16);	// Red LED
-	TIM1->CCR3 = (uint16_t)((green * LED_RGB_BRIGHTNESS * (TIM1->ARR + 1)) >> 16);	// Green LED
-	TIM1->CCR1 = (uint16_t)((blue  * LED_RGB_BRIGHTNESS * (TIM1->ARR + 1)) >> 16);	// Blue LED
+	LED_SetSignalingColor(red << 16 | green << 8 | blue);
+	LED_On(LED_RGB);
 #endif
 }
 
 void RGBClass::brightness(uint8_t brightness)
 {
 #if !defined (RGB_NOTIFICATIONS_ON)
-  LED_SetBrightness(brightness);
+	if (true != _control)
+		return;
+
+	LED_SetBrightness(brightness);
 #endif
 }
 
@@ -188,35 +180,44 @@ void SparkClass::function(const char *funcKey, int (*pFunc)(String paramString))
 	}
 }
 
-void SparkClass::event(const char *eventName, char *eventResult)
+void SparkClass::publish(const char *eventName)
 {
-	int i = 0;
-	if(NULL != eventName && NULL != eventResult)
-	{
-		if(User_Event_Count == USER_EVENT_MAX_COUNT)
-			return;
+  spark_protocol.send_event(eventName, NULL, 60, EventType::PUBLIC);
+}
 
-		size_t resultLength = strlen(eventResult);
-		if(resultLength > USER_EVENT_RESULT_LENGTH)
-			resultLength = USER_EVENT_RESULT_LENGTH;
+void SparkClass::publish(const char *eventName, const char *eventData)
+{
+  spark_protocol.send_event(eventName, eventData, 60, EventType::PUBLIC);
+}
 
-		for(i = 0; i < User_Event_Count; i++)
-		{
-			if(0 == strncmp(User_Event_Lookup_Table[i].userEventName, eventName, USER_EVENT_NAME_LENGTH))
-			{
-				memcpy(User_Event_Lookup_Table[i].userEventResult, eventResult, resultLength);
-				User_Event_Lookup_Table[i].userEventSchedule = true;
-				return;
-			}
-		}
+void SparkClass::publish(const char *eventName, const char *eventData, int ttl)
+{
+  spark_protocol.send_event(eventName, eventData, ttl, EventType::PUBLIC);
+}
 
-		memset(User_Event_Lookup_Table[User_Event_Count].userEventName, 0, USER_EVENT_NAME_LENGTH);
-		memset(User_Event_Lookup_Table[User_Event_Count].userEventResult, 0, USER_EVENT_RESULT_LENGTH);
-		memcpy(User_Event_Lookup_Table[User_Event_Count].userEventName, eventName, USER_EVENT_NAME_LENGTH);
-		memcpy(User_Event_Lookup_Table[User_Event_Count].userEventResult, eventResult, resultLength);
-		User_Event_Lookup_Table[User_Event_Count].userEventSchedule = true;
-		User_Event_Count++;
-	}
+void SparkClass::publish(const char *eventName, const char *eventData, int ttl, Spark_Event_TypeDef eventType)
+{
+  spark_protocol.send_event(eventName, eventData, ttl, (eventType ? EventType::PRIVATE : EventType::PUBLIC));
+}
+
+void SparkClass::publish(String eventName)
+{
+  publish(eventName.c_str());
+}
+
+void SparkClass::publish(String eventName, String eventData)
+{
+  publish(eventName.c_str(), eventData.c_str());
+}
+
+void SparkClass::publish(String eventName, String eventData, int ttl)
+{
+  publish(eventName.c_str(), eventData.c_str(), ttl);
+}
+
+void SparkClass::publish(String eventName, String eventData, int ttl, Spark_Event_TypeDef eventType)
+{
+  publish(eventName.c_str(), eventData.c_str(), ttl, eventType);
 }
 
 void SparkClass::sleep(Spark_Sleep_TypeDef sleepMode, long seconds)
@@ -246,9 +247,29 @@ void SparkClass::sleep(long seconds)
 	SparkClass::sleep(SLEEP_MODE_WLAN, seconds);
 }
 
+inline uint8_t isSocketClosed()
+{
+  uint8_t closed  = get_socket_active_status(sparkSocket)==SOCKET_STATUS_INACTIVE;
+
+  if(closed)
+  {
+      DEBUG("get_socket_active_status(sparkSocket=%d)==SOCKET_STATUS_INACTIVE", sparkSocket);
+  }
+  if(closed && sparkSocket != INVALID_SOCKET)
+  {
+      DEBUG("!!!!!!closed && sparkSocket(%d) != INVALID_SOCKET", sparkSocket);
+  }
+  if(sparkSocket == INVALID_SOCKET)
+    {
+      DEBUG("sparkSocket == INVALID_SOCKET");
+      closed = true;
+    }
+  return closed;
+}
+
 bool SparkClass::connected(void)
 {
-	if(SPARK_SOCKET_CONNECTED && SPARK_HANDSHAKE_COMPLETED)
+	if(SPARK_CLOUD_SOCKETED && SPARK_CLOUD_CONNECTED)
 		return true;
 	else
 		return false;
@@ -257,14 +278,14 @@ bool SparkClass::connected(void)
 int SparkClass::connect(void)
 {
 	//Schedule Spark's cloud connection and handshake
-	SPARK_SOCKET_HANDSHAKE = 1;
+	SPARK_CLOUD_CONNECT = 1;
 	return 0;
 }
 
 int SparkClass::disconnect(void)
 {
 	//Schedule Spark's cloud disconnection
-	SPARK_SOCKET_HANDSHAKE = 0;
+	SPARK_CLOUD_CONNECT = 0;
 	return 0;
 }
 
@@ -301,17 +322,33 @@ String SparkClass::deviceID(void)
 // Returns number of bytes sent or -1 if an error occurred
 int Spark_Send(const unsigned char *buf, int buflen)
 {
-  return send(sparkSocket, buf, buflen, 0);
+  if(SPARK_WLAN_RESET || SPARK_WLAN_SLEEP || isSocketClosed())
+  {
+    DEBUG("SPARK_WLAN_RESET || SPARK_WLAN_SLEEP || isSocketClosed()");
+    //break from any blocking loop
+    return -1;
+  }
+
+  // send returns negative numbers on error
+  int bytes_sent = send(sparkSocket, buf, buflen, 0);
+
+  return bytes_sent;
 }
 
 // Returns number of bytes received or -1 if an error occurred
 int Spark_Receive(unsigned char *buf, int buflen)
 {
-  if(SPARK_WLAN_RESET || SPARK_WLAN_SLEEP)
+  if(SPARK_WLAN_RESET || SPARK_WLAN_SLEEP || isSocketClosed())
   {
     //break from any blocking loop
+    DEBUG("SPARK_WLAN_RESET || SPARK_WLAN_SLEEP || isSocketClosed()");
     return -1;
   }
+
+  timeval timeout;
+  _types_fd_set_cc3000 readSet;
+  int bytes_received = 0;
+  int num_fds_ready = 0;
 
   // reset the fd_set structure
   FD_ZERO(&readSet);
@@ -322,8 +359,7 @@ int Spark_Receive(unsigned char *buf, int buflen)
   timeout.tv_sec = 0;
   timeout.tv_usec = 5000;
 
-  int bytes_received = 0;
-  int num_fds_ready = select(sparkSocket + 1, &readSet, NULL, NULL, &timeout);
+  num_fds_ready = select(sparkSocket + 1, &readSet, NULL, NULL, &timeout);
 
   if (0 < num_fds_ready)
   {
@@ -331,28 +367,36 @@ int Spark_Receive(unsigned char *buf, int buflen)
     {
       // recv returns negative numbers on error
       bytes_received = recv(sparkSocket, buf, buflen, 0);
-      TimingSparkCommTimeout = 0;
+      DEBUG("bytes_received %d",bytes_received);
     }
   }
   else if (0 > num_fds_ready)
   {
     // error from select
+   DEBUG("select Error %d",num_fds_ready);
     return num_fds_ready;
   }
-
   return bytes_received;
 }
 
 void Spark_Prepare_For_Firmware_Update(void)
 {
   SPARK_FLASH_UPDATE = 1;
+  TimingFlashUpdateTimeout = 0;
   FLASH_Begin(EXTERNAL_FLASH_OTA_ADDRESS);
 }
 
 void Spark_Finish_Firmware_Update(void)
 {
   SPARK_FLASH_UPDATE = 0;
+  TimingFlashUpdateTimeout = 0;
   FLASH_End();
+}
+
+void Spark_Save_Firmware_Chunk(unsigned char *buf, long unsigned int buflen)
+{
+  TimingFlashUpdateTimeout = 0;
+  FLASH_Update(buf, buflen);
 }
 
 int numUserFunctions(void)
@@ -411,7 +455,7 @@ void Spark_Protocol_Init(void)
     callbacks.prepare_for_firmware_update = Spark_Prepare_For_Firmware_Update;
     callbacks.finish_firmware_update = Spark_Finish_Firmware_Update;
     callbacks.calculate_crc = Compute_CRC32;
-    callbacks.save_firmware_chunk = FLASH_Update;
+    callbacks.save_firmware_chunk = Spark_Save_Firmware_Chunk;
     callbacks.signal = Spark_Signal;
     callbacks.millis = millis;
 
@@ -521,13 +565,20 @@ void Spark_Signal(bool on)
   }
 }
 
+void Spark_SetTime(unsigned long dateTime)
+{
+	Time.setTime(dateTime);
+}
+
 int Internet_Test(void)
 {
-	long testSocket;
-	sockaddr testSocketAddr;
-	int testResult = 0;
-
+    long testSocket;
+    sockaddr testSocketAddr;
+    int testResult = 0;
+    DEBUG("socket");
     testSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    DEBUG("socketed testSocket=%d",testSocket);
+
 
     if (testSocket < 0)
     {
@@ -541,25 +592,44 @@ int Internet_Test(void)
     testSocketAddr.sa_data[0] = 0;
     testSocketAddr.sa_data[1] = 53;
 
-	// the destination IP address: 8.8.8.8
-	testSocketAddr.sa_data[2] = 8;
-	testSocketAddr.sa_data[3] = 8;
-	testSocketAddr.sa_data[4] = 8;
-	testSocketAddr.sa_data[5] = 8;
+    // the destination IP address: 8.8.8.8
+    testSocketAddr.sa_data[2] = 8;
+    testSocketAddr.sa_data[3] = 8;
+    testSocketAddr.sa_data[4] = 8;
+    testSocketAddr.sa_data[5] = 8;
 
-	testResult = connect(testSocket, &testSocketAddr, sizeof(testSocketAddr));
+    uint32_t ot = SPARK_WLAN_SetNetWatchDog(S2M(MAX_SEC_WAIT_CONNECT));
+    DEBUG("connect");
+    testResult = connect(testSocket, &testSocketAddr, sizeof(testSocketAddr));
+    DEBUG("connected testResult=%d",testResult);
+    SPARK_WLAN_SetNetWatchDog(ot);
 
-	closesocket(testSocket);
+#if defined(SEND_ON_CLOSE)
+    DEBUG("send");
+    char c = 0;
+    int rc = send(testSocket, &c,1, 0);
+    DEBUG("send %d",rc);
+#endif
 
-	//if connection fails, testResult returns -1
+    DEBUG("Close");
+    int rv = closesocket(testSocket);
+    DEBUG("Closed rv=%d",rv);
+
+    //if connection fails, testResult returns -1
     return testResult;
 }
 
+// Same return value as connect(), -1 on error
 int Spark_Connect(void)
 {
+  DEBUG("sparkSocket Now =%d",sparkSocket);
+
+  // Close Original
+
   Spark_Disconnect();
 
   sparkSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  DEBUG("socketed sparkSocket=%d",sparkSocket);
 
   if (sparkSocket < 0)
   {
@@ -573,22 +643,70 @@ int Spark_Connect(void)
   tSocketAddr.sa_data[0] = (SPARK_SERVER_PORT & 0xFF00) >> 8;
   tSocketAddr.sa_data[1] = (SPARK_SERVER_PORT & 0x00FF);
 
-  // the destination IP address
-  tSocketAddr.sa_data[2] = 54;	// First Octet of destination IP
-  tSocketAddr.sa_data[3] = 208;	// Second Octet of destination IP
-  tSocketAddr.sa_data[4] = 229; 	// Third Octet of destination IP
-  tSocketAddr.sa_data[5] = 4;	// Fourth Octet of destination IP
+  ServerAddress server_addr;
+  FLASH_Read_ServerAddress(&server_addr);
 
-  return connect(sparkSocket, &tSocketAddr, sizeof(tSocketAddr));
+  uint32_t ip_addr = 0;
+
+  switch (server_addr.addr_type)
+  {
+    case IP_ADDRESS:
+      ip_addr = server_addr.ip;
+      break;
+
+    default:
+    case INVALID_INTERNET_ADDRESS:
+    {
+      const char default_domain[] = "device.spark.io";
+      memcpy(server_addr.domain, default_domain, strlen(default_domain));
+      // and fall through to domain name case
+    }
+
+    case DOMAIN_NAME:
+      // CC3000 unreliability workaround, usually takes 2 or 3 attempts
+      int attempts = 10;
+      while (!ip_addr && 0 < --attempts)
+      {
+        gethostbyname(server_addr.domain, strnlen(server_addr.domain, 126), &ip_addr);
+      }
+  }
+
+  if (!ip_addr)
+  {
+    // final fallback
+    ip_addr = (54 << 24) | (208 << 16) | (229 << 8) | 4;
+  }
+
+  tSocketAddr.sa_data[2] = BYTE_N(ip_addr, 3);
+  tSocketAddr.sa_data[3] = BYTE_N(ip_addr, 2);
+  tSocketAddr.sa_data[4] = BYTE_N(ip_addr, 1);
+  tSocketAddr.sa_data[5] = BYTE_N(ip_addr, 0);
+
+  uint32_t ot = SPARK_WLAN_SetNetWatchDog(S2M(MAX_SEC_WAIT_CONNECT));
+  DEBUG("connect");
+  int rv = connect(sparkSocket, &tSocketAddr, sizeof(tSocketAddr));
+  DEBUG("connected connect=%d",rv);
+  SPARK_WLAN_SetNetWatchDog(ot);
+  return rv;
 }
 
 int Spark_Disconnect(void)
 {
-  int retVal = closesocket(sparkSocket);
-
-  if(retVal == 0)
-    sparkSocket = 0xFFFFFFFF;
-
+  int retVal= 0;
+  DEBUG("");
+  if (sparkSocket >= 0)
+  {
+#if defined(SEND_ON_CLOSE)
+      DEBUG("send");
+      char c = 0;
+      int rc = send(sparkSocket, &c,1, 0);
+      DEBUG("send %d",rc);
+#endif
+      DEBUG("Close");
+      retVal = closesocket(sparkSocket);
+      DEBUG("Closed retVal=%d", retVal);
+      sparkSocket = INVALID_SOCKET;
+  }
   return retVal;
 }
 
@@ -644,24 +762,6 @@ int userFuncSchedule(const char *funcKey, const char *paramString)
 		}
 	}
 	return -1;
-}
-
-void userEventSend(void)
-{
-	int i = 0;
-	for(i = 0; i < User_Event_Count; i++)
-	{
-		if(true == User_Event_Lookup_Table[i].userEventSchedule)
-		{
-			User_Event_Lookup_Table[i].userEventSchedule = false;
-/*
-			//Send the "Event" back to the server here OR in a separate thread
-			unsigned char buf[256];
-			memset(buf, 0, 256);
-			spark_protocol.event(buf, User_Event_Lookup_Table[i].userEventName, strlen(User_Event_Lookup_Table[i].userEventName), User_Event_Lookup_Table[i].userEventResult, strlen(User_Event_Lookup_Table[i].userEventResult));
-*/
-		}
-	}
 }
 
 long socket_connect(long sd, const sockaddr *addr, long addrlen)
