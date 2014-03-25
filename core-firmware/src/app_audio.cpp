@@ -1,9 +1,7 @@
 #include "application.h"
 #include "_quadencoder.h"
 #include "_Si4703.h"
-#include "_button.h"
-#include "_mytcp.h"
-#include "_led.h"
+#include "_common.h"
 
 // ******************************
 // Definitions
@@ -13,74 +11,34 @@ int PIN_SCL   = D0;
 int PIN_SDA   = D1;
 int PIN_RST   = D2;
 int PIN_STBY  = D3;
-int PIN_MUTE  = D4;
 int PIN_POWER = D5;
 int PIN_VOLUP = D6;
 int PIN_VOLDN = D7;
 
-int RGB_LED[3] = {A0, A1, A2};
-int PIN_LEDBTN = A3;
 int PIN_ENC1   = A4;
 int PIN_ENC2   = A5;
 int PIN_ENCBTN = A6;
 int PIN_MSCBTN = A7;
-
-String STATE_ON  = "1";
-String STATE_OFF = "0";
-
-String ACTIVITY_DEBUG = "0";
-String ACTIVITY_PRESS = "1";
-String ACTIVITY_HOLD  = "2";
-String ACTIVITY_ON    = "3";
-String ACTIVITY_OFF   = "4";
-String ACTIVITY_UP    = "5";
-String ACTIVITY_DOWN  = "6";
-String ACTIVITY_TURNCW  = "7";
-String ACTIVITY_TURNCCW = "8";
+int PIN_LEDBTN = A3;
+int RGB_LED[3] = {A0, A1, A2};
 
 String COMPONENT_LEDBTN = "1";
-String COMPONENT_ENCBTN = "5";
-String COMPONENT_MSCBTN = "6";
-String COMPONENT_KNOB   = "7";
-String COMPONENT_MUTE   = "2";
-String COMPONENT_POWER  = "3";
-String COMPONENT_VOLUME = "4";
-
-char COMMAND_STATUS    = 'S';
-char COMMAND_LEDOFF    = 'O';
-char COMMAND_LEDWHITE  = 'W';
-char COMMAND_LEDRED    = 'R';
-char COMMAND_LEDGREEN  = 'G';
-char COMMAND_LEDBLUE   = 'B';
-char COMMAND_LEDCYAN   = 'C';
-char COMMAND_LEDMAG    = 'N';
-char COMMAND_LEDYEL    = 'Y';
-char COMMAND_LEDBLINK  = 'L';
-char COMMAND_LEDFADE   = 'F';
-char COMMAND_MUTETOG   = 'M';
-char COMMAND_POWERTOG  = 'P';
-char COMMAND_POWEROFF  = '0';
-char COMMAND_POWERON   = '1';
-char COMMAND_MUTEOFF   = '2';
-char COMMAND_MUTEON    = '3';
-char COMMAND_VOLUMEUP  = 'U';
-char COMMAND_VOLUMEDN  = 'D';
-char COMMAND_VOLUMELOW = 'E';
+String COMPONENT_ENCBTN = "2";
+String COMPONENT_MSCBTN = "3";
+String COMPONENT_KNOB   = "4";
+String COMPONENT_POWER  = "5";
+String COMPONENT_VOLUME = "6";
 
 int  VOL_LEVEL = 0;
-bool IS_CONNECTED_TO_SERVER = false;
+char DEVICE_ID[25];
 bool IS_AUDIO_POWERED = false;
-bool IS_AUDIO_MUTED = false;
+bool IS_CONNECTED_TO_SERVER = false;
 
 // ******************************
 // Function Prototype Definitions
 // ******************************
 
-int connect(String ip);
-int disconnect(String params);
-void audioMuteOn();
-void audioMuteOff();
-void audioToggleMute();
+void status();
 void audioPowerOn();
 void audioPowerOff();
 void audioTogglePower();
@@ -89,53 +47,53 @@ void audioVolumeDown();
 void audioVolumeReset();
 void sendAudioVolumeLevel();
 void audioVolumeSet(int level);
-void audioVolumeLow();
-void status();
 
-void checkKnob(char state, String component);
-void checkButton(char state, String component);
+void checkKnob(char state, String comp);
+void checkButton(char state, String comp);
+
+void mqttConnect();
+void mqttSubscribe(char* topic);
+void mqttPublish(char* topic, char* payload);
+void mqttCallback(char* topic, byte* payload, unsigned int length);
+void mqttMessageHandler(String tStr, char* tChar, String pStr, char* pChar);
 
 // ******************************
 // Class instantiation
 // ******************************
 
-MyTCP mytcp;
-QuadEncoder knob(PIN_ENC1, PIN_ENC2);
+TCPClient tcp;
+SimpleTimer timer;
+int connectTimer;
+
+PubSubClient mqtt(MQTT_HOST, 1883, mqttCallback, tcp);
 LED led(RGB_LED[0], RGB_LED[1], RGB_LED[2]);
+Si4703 radio(PIN_RST, PIN_SDA, PIN_SCL);
+QuadEncoder knob(PIN_ENC1, PIN_ENC2);
 Button ledbtn(PIN_LEDBTN, INPUT_PULLUP);
 Button encbtn(PIN_ENCBTN, INPUT_PULLUP);
 Button mscbtn(PIN_MSCBTN, INPUT_PULLUP);
-Si4703 radio(PIN_RST, PIN_SDA, PIN_SCL);
 
 void setup()
 {
 
-    Spark.function("connect", connect);
-    Spark.function("disconnect", disconnect);
+    String deviceID = Spark.deviceID();
+    deviceID.toCharArray(DEVICE_ID, 25);
 
-    //pinMode(RGB_LED[0], INPUT);
-    //pinMode(RGB_LED[1], INPUT);
-    //pinMode(RGB_LED[2], INPUT);
+    mqttConnect();
+    connectTimer = timer.setInterval(1000, mqttConnect);
 
     pinMode(PIN_POWER, OUTPUT);
     pinMode(PIN_VOLUP, OUTPUT);
     pinMode(PIN_VOLDN, OUTPUT);
-    pinMode(PIN_MUTE,  OUTPUT);
     pinMode(PIN_STBY,  OUTPUT);
     pinMode(PIN_RST,   OUTPUT);
-    /*
-    pinMode(PIN_LEDBTN, INPUT_PULLUP);
-    pinMode(PIN_ENCBTN, INPUT_PULLUP);
-    pinMode(PIN_ENC1,   INPUT_PULLUP);
-    pinMode(PIN_ENC2,   INPUT_PULLUP);
-    */
 
     digitalWrite(PIN_VOLUP, LOW);
     digitalWrite(PIN_VOLDN, LOW);
     digitalWrite(PIN_POWER, HIGH);
 
     radio.powerOn();
-    radio.setVolume(12);
+    radio.setVolume(15);
     radio.setChannel(879);
 
     delay(500);
@@ -143,7 +101,7 @@ void setup()
     digitalWrite(PIN_VOLUP, HIGH);
     digitalWrite(PIN_VOLDN, HIGH);
 
-    audioMuteOff();
+    led.setMaxIntensity(MAX_LED_INTENSITY);
     audioPowerOn();
 
 }
@@ -154,134 +112,155 @@ void setup()
 
 void loop()
 {
-
-    mytcp.tick();
+    led.loop();
+    mqtt.loop();
+    timer.run();
 
     checkKnob(knob.state(), COMPONENT_KNOB);
     checkButton(ledbtn.state(), COMPONENT_LEDBTN);
     checkButton(encbtn.state(), COMPONENT_ENCBTN);
     checkButton(mscbtn.state(), COMPONENT_MSCBTN);
 
-    char read = mytcp.read();
-
-    IS_CONNECTED_TO_SERVER = mytcp.status();
-
-    if (IS_CONNECTED_TO_SERVER) {
-        led.color("green");
+    if (mqtt.connected()) {
+        timer.disable(connectTimer);
     } else {
-        led.color("red");
-    }
-
-    if (read == COMMAND_LEDOFF) {
-        //led.off();
-    } else if (read == COMMAND_LEDWHITE) {
-        //led.color("white");
-    } else if (read == COMMAND_LEDRED) {
-        //led.color("red");
-    } else if (read == COMMAND_LEDGREEN) {
-        //led.color("green");
-    } else if (read == COMMAND_LEDBLUE) {
-        //led.color("blue");
-    } else if (read == COMMAND_LEDCYAN) {
-        //led.color("cyan");
-    } else if (read == COMMAND_LEDMAG) {
-        //led.color("magenta");
-    } else if (read == COMMAND_LEDYEL) {
-        //led.color("yellow");
-    } else if (read == COMMAND_LEDBLINK) {
-        //led.blink();
-    } else if (read == COMMAND_LEDFADE) {
-        //led.fade();
-    } else if (read == COMMAND_MUTEON) {
-        audioMuteOn();
-    } else if (read == COMMAND_MUTEOFF) {
-        audioMuteOff();
-    } else if (read == COMMAND_MUTETOG) {
-        audioToggleMute();
-    } else if (read == COMMAND_POWERON) {
-        audioPowerOn();
-    } else if (read == COMMAND_POWEROFF) {
-        audioPowerOff();
-    } else if (read == COMMAND_POWERTOG) {
-        audioTogglePower();
-    } else if (read == COMMAND_VOLUMEUP) {
-        audioVolumeUp();
-        sendAudioVolumeLevel();
-    } else if (read == COMMAND_VOLUMEDN) {
-        audioVolumeDown();
-        sendAudioVolumeLevel();
-    } else if (read == COMMAND_VOLUMELOW) {
-        audioVolumeLow();
-    } else if (read == COMMAND_STATUS) {
-        status();
+        timer.enable(connectTimer);
     }
 
 }
 
 // ******************************
-// Status
+// MQTT Connection Maintenance
 // ******************************
 
-void status() {
-
-    if (IS_AUDIO_POWERED) {
-        mytcp.sendValue(COMPONENT_POWER, STATE_ON);
-    } else {
-        mytcp.sendValue(COMPONENT_POWER, STATE_OFF);
+void mqttConnect() {
+    if (!mqtt.connected()) {
+        if (mqtt.connect(DEVICE_ID)) {
+            mqttSubscribe("setup/#");
+            mqttSubscribe("control/#");
+            led.color("green");
+        } else {
+            led.color("red");
+        }
     }
+}
 
-    if (IS_AUDIO_MUTED) {
-        mytcp.sendValue(COMPONENT_MUTE, STATE_ON);
-    } else {
-        mytcp.sendValue(COMPONENT_MUTE, STATE_OFF);
-    }
+void mqttSubscribe(char* topic) {
 
-    sendAudioVolumeLevel();
+    // This makes it so that every event that is subscribed
+    // is prefixed in the /dev/{DEVICE_ID}/ namespace.
+
+    String devTopic = "dev/" + Spark.deviceID() + "/";
+    String newTopic = String(topic);
+    String fullTopic = devTopic + newTopic;
+    char charTopic[fullTopic.length() + 1];
+    fullTopic.toCharArray(charTopic, fullTopic.length() + 1);
+
+    mqtt.subscribe(charTopic, 1);
+}
+
+void mqttPublish(char* topic, char* payload) {
+
+    // This makes it so that every event that is published
+    // is prefixed in the /dev/{DEVICE_ID}/ namespace.
+
+    String devTopic = "dev/" + Spark.deviceID() + "/";
+    String newTopic = String(topic);
+    String fullTopic = devTopic + newTopic;
+    char charTopic[fullTopic.length() + 1];
+    fullTopic.toCharArray(charTopic, fullTopic.length() + 1);
+
+    mqtt.publish(charTopic, payload);
 
 }
 
-// ******************************
-// Spark Cloud Functions
-// ******************************
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
-int connect(String ip) {
-    mytcp.setIP(ip);
-    return mytcp.connect();
-}
+    char msg[length];
+    String ps = String((const char*) payload);
+    ps.toCharArray(msg, length + 1);
 
-int disconnect(String params) {
-    return mytcp.disconnect();
+    String ts = String(topic);
+    String tps = ts.substring(29, ts.length() + 1);
+    char tpc[ts.length() + 1];
+    tps.toCharArray(tpc, ts.length() + 1);
+
+    mqttPublish("log/callback/topic", tpc);
+    mqttPublish("log/callback/message", msg);
+
+    // ******************************
+    // Incoming Event Handling
+    // ******************************
+
+
+    if (tps == "control/power") {
+        mqttPublish("log/callback/power", "matched");
+
+        if (strcmp(msg, "on") == 0) {
+            audioPowerOn();
+            mqttPublish("log/callback/power/on", "matched");
+        }
+
+        if (strcmp(msg, "off") == 0) {
+            mqttPublish("log/callback/power/off", "matched");
+            audioPowerOff();
+        }
+    }
+
+    if (tps == "control/vol") {
+        mqttPublish("log/callback/vol", "matched");
+
+        if (strcmp(msg, "low") == 0) {
+            audioVolumeSet(VOL_LEVEL_LOW);
+
+        } else if (strcmp(msg, "med") == 0) {
+            audioVolumeSet(VOL_LEVEL_MED);
+
+        } else if (strcmp(msg, "high") == 0) {
+            audioVolumeSet(VOL_LEVEL_HIGH);
+
+        } else {
+            int level = ps.toInt();
+            audioVolumeSet(level);
+
+        }
+    }
+
+    if (tps == "control/radio/station") {
+        mqttPublish("log/callback/radio/station", "matched");
+        int station = ps.toInt();
+        radio.setChannel(station);
+    }
+
+    if (tps == "control/radio/vol") {
+        mqttPublish("log/callback/radio/vol", "matched");
+        int level = ps.toInt();
+        radio.setVolume(level);
+    }
+
+    if (tps == "control/led") {
+        mqttPublish("log/callback/led", "matched");
+        led.color(msg);
+    }
+
+
 }
 
 // ******************************
 // Knob Handling
 // ******************************
 
-void checkKnob(char state, String component) {
+void checkKnob(char state, String comp) {
 
-    if (IS_CONNECTED_TO_SERVER) {
-
-        switch (state) {
-            case '>':
-                mytcp.sendAction(component, ACTIVITY_TURNCW);
-                break;
-            case '<':
-                mytcp.sendAction(component, ACTIVITY_TURNCCW);
-                break;
-        }
-
-
-    } else {
-
-        switch (state) {
-            case '>':
-                audioVolumeUp();
-                break;
-            case '<':
-                audioVolumeDown();
-                break;
-        }
-
+    switch (state) {
+        case '>':
+            audioVolumeUp();
+            sendAudioVolumeLevel();
+            break;
+        case '<':
+            audioVolumeDown();
+            sendAudioVolumeLevel();
+            break;
     }
 
 }
@@ -290,37 +269,29 @@ void checkKnob(char state, String component) {
 // Button Handling
 // ******************************
 
-void checkButton(char state, String component) {
-    if (IS_CONNECTED_TO_SERVER) {
-        switch (state) {
+void checkButton(char state, String comp) {
+    if (comp == COMPONENT_ENCBTN) {
+       switch (state) {
             case 'P':
-                mytcp.sendAction(component, ACTIVITY_PRESS);
+                audioTogglePower();
+                break;
+       }
+    }
+    if (comp == COMPONENT_LEDBTN) {
+       switch (state) {
+            case 'P':
+                led.dim();
+                break;
+        }
+    }
+    if (comp == COMPONENT_MSCBTN) {
+       switch (state) {
+            case 'P':
+                mqttPublish("action/button/misc","press");
                 break;
             case 'H':
-                mytcp.sendAction(component, ACTIVITY_HOLD);
+                mqttPublish("action/button/misc","hold");
                 break;
-        }
-    } else {
-        if (component == COMPONENT_ENCBTN) {
-           switch (state) {
-                case 'P':
-                    audioTogglePower();
-                    break;
-            }
-        }
-        if (component == COMPONENT_LEDBTN) {
-           switch (state) {
-                case 'P':
-                    led.dim();
-                    break;
-            }
-        }
-        if (component == COMPONENT_MSCBTN) {
-           switch (state) {
-                case 'P':
-
-                    break;
-            }
         }
     }
 }
@@ -329,40 +300,20 @@ void checkButton(char state, String component) {
 // Amplifier Commands
 // ******************************
 
-void audioMuteOn() {
-    IS_AUDIO_MUTED = true;
-    digitalWrite(PIN_MUTE, LOW);
-    mytcp.sendAction(COMPONENT_MUTE, ACTIVITY_ON);
-}
-
-void audioMuteOff() {
-    IS_AUDIO_MUTED = false;
-    digitalWrite(PIN_MUTE, HIGH);
-    mytcp.sendAction(COMPONENT_MUTE, ACTIVITY_OFF);
-}
-
-void audioToggleMute() {
-    if (IS_AUDIO_MUTED) {
-        audioMuteOff();
-    } else {
-        audioMuteOn();
-    }
-}
-
 void audioPowerOn() {
     digitalWrite(PIN_STBY, HIGH);
     IS_AUDIO_POWERED = true;
-    audioVolumeSet(20);
-    led.color("green");
-    mytcp.sendAction(COMPONENT_POWER, ACTIVITY_ON);
+    audioVolumeSet(VOL_LEVEL_DEFAULT);
+    mqttPublish("status/power", "on");
+    led.on();
 }
 
 void audioPowerOff() {
     audioVolumeSet(0);
     IS_AUDIO_POWERED = false;
     digitalWrite(PIN_STBY, LOW);
+    mqttPublish("status/power", "off");
     led.off();
-    mytcp.sendAction(COMPONENT_POWER, ACTIVITY_OFF);
 }
 
 void audioTogglePower() {
@@ -402,25 +353,21 @@ void audioVolumeDown() {
     }
 }
 
-void audioVolumeLow() {
-    audioVolumeSet(20);
-    audioMuteOff();
-}
 
 void sendAudioVolumeLevel() {
-    String vol = "";
-    vol += VOL_LEVEL;
-    mytcp.sendValue(COMPONENT_VOLUME, vol);
+    char level [2];
+    sprintf (level, "%d", VOL_LEVEL);
+    mqttPublish("status/vol", level);
 }
 
 void audioVolumeSet(int level) {
     if (level > VOL_LEVEL) {
-        for (int i=VOL_LEVEL; i<=level; i++) {
+        for (int i=VOL_LEVEL; i<level; i++) {
             audioVolumeUp();
             delay(10);
         }
     } else {
-        for (int i=VOL_LEVEL; i>=level; i--) {
+        for (int i=VOL_LEVEL; i>level; i--) {
             audioVolumeDown();
             delay(10);
         }

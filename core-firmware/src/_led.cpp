@@ -8,26 +8,37 @@ LED::LED(int pinR, int pinG, int pinB) {
     _r = 0;
     _g = 0;
     _b = 0;
+    _state = 0;
     _blink = 0;
     _blinkGap = 350;
-    _intensity = 50;
+    _intensity = 0;
+    _intensityMax = 30;
     pinMode(_pinR, OUTPUT);
     pinMode(_pinG, OUTPUT);
     pinMode(_pinB, OUTPUT);
 }
 
-void LED::tick() {
+void LED::loop() {
     _now = millis();
     if (_blinking) {
         calcBlink();
     }
-    if (_fading) {
-        calcFade();
+    if (_state == 1) {
+        change();
     }
 }
 
+void LED::on() {
+    _state = 1;
+}
+
 void LED::off() {
+    _state = 0;
     blank();
+}
+
+void LED::change() {
+    intensity(_intensity);
 }
 
 void LED::blank() {
@@ -37,41 +48,43 @@ void LED::blank() {
 }
 
 void LED::rgb(int r, int g, int b) {
-    analogWrite(_pinR, r);
-    analogWrite(_pinG, g);
-    analogWrite(_pinB, b);
     _r = r;
     _g = g;
     _b = b;
 }
 
 void LED::dim() {
-    if (_intensity == 0) {
-        intensity(50);
-    } else if (_intensity > 5) {
-        intensity(5);
-    } else {
-        intensity(0);
+    if (_state == 1) {
+        if (_intensity == 0) {
+            intensity(_intensityMax);
+        } else if (_intensity > 5) {
+            intensity(5);
+        } else {
+            intensity(0);
+        }
     }
 }
 
 void LED::intensity(int value) {
+    if (_state == 1) {
+        _intensity = value;
+        int r = int((_r / 100) * value);
+        int g = int((_g / 100) * value);
+        int b = int((_b / 100) * value);
+        analogWrite(_pinR, r);
+        analogWrite(_pinG, g);
+        analogWrite(_pinB, b);
+    }
+}
+
+void LED::setMaxIntensity(int value) {
+    _intensityMax = value;
     _intensity = value;
-    int r = int((_r / 100) * value);
-    int g = int((_g / 100) * value);
-    int b = int((_b / 100) * value);
-    analogWrite(_pinR, r);
-    analogWrite(_pinG, g);
-    analogWrite(_pinB, b);
 }
 
 void LED::fade() {
     _fading = true;
     _blinking = false;
-}
-
-void LED::calcFade() {
-
 }
 
 void LED::blink() {
@@ -92,43 +105,43 @@ void LED::calcBlink() {
     }
 }
 
-void LED::color(String name) {
+void LED::color(char* color) {
 
     _fading = false;
     _blinking = false;
 
-    if (name == "white") {
+    if (strcmp(color, "white") == 0) {
         rgb(255, 255, 255);
     }
 
-    if (name == "red") {
+    if (strcmp(color, "red") == 0) {
         rgb(255, 0, 0);
     }
 
-    if (name == "green") {
+    if (strcmp(color, "green") == 0) {
         rgb(0, 255, 0);
     }
 
-    if (name == "blue") {
+    if (strcmp(color, "blue") == 0) {
         rgb(0, 0, 255);
     }
 
-    if (name == "cyan") {
+    if (strcmp(color, "cyan") == 0) {
         rgb(0, 255, 255);
     }
 
-    if (name == "magenta") {
+    if (strcmp(color, "magenta") == 0) {
         rgb(255, 0, 255);
     }
 
-    if (name == "yellow") {
+    if (strcmp(color, "yellow") == 0) {
         rgb(255, 255, 0);
     }
 
-    if (name == "orange") {
+    if (strcmp(color, "orange") == 0) {
         rgb(255, 165, 0);
     }
 
-    intensity(_intensity);
+    change();
 
 }

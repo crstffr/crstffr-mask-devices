@@ -113,20 +113,12 @@ void setup()
     Spark.function("connect", connect);
     Spark.function("disconnect", disconnect);
 
-    //pinMode(RGB_LED[0], INPUT);
-    //pinMode(RGB_LED[1], INPUT);
-    //pinMode(RGB_LED[2], INPUT);
-
     pinMode(PIN_POWER, OUTPUT);
     pinMode(PIN_VOLUP, OUTPUT);
     pinMode(PIN_VOLDN, OUTPUT);
     pinMode(PIN_MUTE,  OUTPUT);
     pinMode(PIN_STBY,  OUTPUT);
     pinMode(PIN_RST,   OUTPUT);
-    pinMode(PIN_LEDBTN, INPUT_PULLUP);
-    pinMode(PIN_ENCBTN, INPUT_PULLUP);
-    pinMode(PIN_ENC1,   INPUT_PULLUP);
-    pinMode(PIN_ENC2,   INPUT_PULLUP);
 
     digitalWrite(PIN_VOLUP, LOW);
     digitalWrite(PIN_VOLDN, LOW);
@@ -143,8 +135,6 @@ void setup()
 
     audioMuteOff();
     audioPowerOn();
-
-
 
 }
 
@@ -163,6 +153,14 @@ void loop()
     checkButton(mscbtn.state(), COMPONENT_MSCBTN);
 
     char read = mytcp.read();
+
+    IS_CONNECTED_TO_SERVER = mytcp.status();
+
+    if (IS_CONNECTED_TO_SERVER) {
+        led.color("green");
+    } else {
+        led.color("red");
+    }
 
     if (read == COMMAND_LEDOFF) {
         //led.off();
@@ -300,6 +298,20 @@ void checkButton(char state, String component) {
                     break;
             }
         }
+        if (component == COMPONENT_LEDBTN) {
+           switch (state) {
+                case 'P':
+                    led.dim();
+                    break;
+            }
+        }
+        if (component == COMPONENT_MSCBTN) {
+           switch (state) {
+                case 'P':
+
+                    break;
+            }
+        }
     }
 }
 
@@ -331,7 +343,7 @@ void audioPowerOn() {
     digitalWrite(PIN_STBY, HIGH);
     IS_AUDIO_POWERED = true;
     audioVolumeSet(20);
-    led.color("blue");
+    led.color("green");
     mytcp.sendAction(COMPONENT_POWER, ACTIVITY_ON);
 }
 
@@ -339,6 +351,7 @@ void audioPowerOff() {
     audioVolumeSet(0);
     IS_AUDIO_POWERED = false;
     digitalWrite(PIN_STBY, LOW);
+    led.off();
     mytcp.sendAction(COMPONENT_POWER, ACTIVITY_OFF);
 }
 

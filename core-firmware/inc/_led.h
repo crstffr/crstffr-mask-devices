@@ -5,15 +5,18 @@ class LED
 {
     public:
         LED(int pinR, int pinG, int pinB);
+        void on();
         void off();
-        void tick();
+        void loop();
         void rgb(int r, int g, int b);
         void intensity(int value);
-        void color(String name);
+        void setMaxIntensity(int value);
+        void color(char* name);
         void dim();
         void fade();
         void blank();
         void blink();
+        void change();
         void calcFade();
         void calcBlink();
 
@@ -29,6 +32,7 @@ class LED
         bool _fading;
         bool _blinking;
         int _intensity;
+        int _intensityMax;
         unsigned long _now;
         unsigned long _fadeTimer;
         unsigned long _blinkTimer;
