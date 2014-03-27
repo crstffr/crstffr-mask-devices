@@ -105,10 +105,23 @@ void LED::calcBlink() {
     }
 }
 
+char* LED::getColor() {
+    return _color;
+}
+
+int LED::getIntensity() {
+    return _intensity;
+}
+
+int LED::getState() {
+    return _state;
+}
+
 void LED::color(char* color) {
 
     _fading = false;
     _blinking = false;
+    _color = color;
 
     if (strcmp(color, "white") == 0) {
         rgb(255, 255, 255);

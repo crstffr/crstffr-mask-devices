@@ -1,7 +1,7 @@
 #include "application.h"
-#include "_quadencoder.h"
-#include "_Si4703.h"
 #include "_common.h"
+#include "_Si4703.h"
+#include "_quadencoder.h"
 
 // ******************************
 // Definitions
@@ -15,12 +15,14 @@ int PIN_POWER = D5;
 int PIN_VOLUP = D6;
 int PIN_VOLDN = D7;
 
+int PIN_R = A0;
+int PIN_G = A1;
+int PIN_B = A2;
 int PIN_ENC1   = A4;
 int PIN_ENC2   = A5;
+int PIN_LEDBTN = A3;
 int PIN_ENCBTN = A6;
 int PIN_MSCBTN = A7;
-int PIN_LEDBTN = A3;
-int RGB_LED[3] = {A0, A1, A2};
 
 String COMPONENT_LEDBTN = "1";
 String COMPONENT_ENCBTN = "2";
@@ -29,58 +31,46 @@ String COMPONENT_KNOB   = "4";
 String COMPONENT_POWER  = "5";
 String COMPONENT_VOLUME = "6";
 
-int  VOL_LEVEL = 0;
-char DEVICE_ID[25];
+int  AMP_VOLUME = 0;
+int  RADIO_VOLUME = 0;
+int  RADIO_STATION = 0;
 bool IS_AUDIO_POWERED = false;
-bool IS_CONNECTED_TO_SERVER = false;
 
 // ******************************
 // Function Prototype Definitions
 // ******************************
 
-void status();
-void audioPowerOn();
-void audioPowerOff();
-void audioTogglePower();
-void audioVolumeUp();
-void audioVolumeDown();
-void audioVolumeReset();
-void sendAudioVolumeLevel();
-void audioVolumeSet(int level);
-
+void sendStatus();
+void onConnect();
+void onDisconnect();
+void ampPowerOn();
+void ampPowerOff();
+void ampPowerToggle();
+void ampVolumeUp();
+void ampVolumeDown();
+void ampVolumeReset();
+void sendAmpVolume();
+void ampSetVolume(int level);
+void radioSetVolume(int level);
+void radioSetStation(int station);
 void checkKnob(char state, String comp);
 void checkButton(char state, String comp);
 
-void mqttConnect();
-void mqttSubscribe(char* topic);
-void mqttPublish(char* topic, char* payload);
-void mqttCallback(char* topic, byte* payload, unsigned int length);
-void mqttMessageHandler(String tStr, char* tChar, String pStr, char* pChar);
-
 // ******************************
-// Class instantiation
+// Class instantiations
 // ******************************
 
-TCPClient tcp;
-SimpleTimer timer;
-int connectTimer;
-
-PubSubClient mqtt(MQTT_HOST, 1883, mqttCallback, tcp);
-LED led(RGB_LED[0], RGB_LED[1], RGB_LED[2]);
+LED led(PIN_R, PIN_G, PIN_B);
 Si4703 radio(PIN_RST, PIN_SDA, PIN_SCL);
 QuadEncoder knob(PIN_ENC1, PIN_ENC2);
 Button ledbtn(PIN_LEDBTN, INPUT_PULLUP);
 Button encbtn(PIN_ENCBTN, INPUT_PULLUP);
 Button mscbtn(PIN_MSCBTN, INPUT_PULLUP);
 
-void setup()
-{
+void setup() {
 
-    String deviceID = Spark.deviceID();
-    deviceID.toCharArray(DEVICE_ID, 25);
-
-    mqttConnect();
-    connectTimer = timer.setInterval(1000, mqttConnect);
+    Serial.begin(9600);
+    mqttSetup(onConnect, onDisconnect);
 
     pinMode(PIN_POWER, OUTPUT);
     pinMode(PIN_VOLUP, OUTPUT);
@@ -93,8 +83,8 @@ void setup()
     digitalWrite(PIN_POWER, HIGH);
 
     radio.powerOn();
-    radio.setVolume(15);
-    radio.setChannel(879);
+    radioSetVolume(DEFAULT_RADIO_VOLUME);
+    radioSetStation(DEFAULT_RADIO_STATION);
 
     delay(500);
 
@@ -102,7 +92,11 @@ void setup()
     digitalWrite(PIN_VOLDN, HIGH);
 
     led.setMaxIntensity(MAX_LED_INTENSITY);
-    audioPowerOn();
+    led.color("red");
+
+    if (AMP_POWER_ON_BOOT) {
+        ampPowerOn();
+    }
 
 }
 
@@ -110,22 +104,15 @@ void setup()
 // Main Loop
 // ******************************
 
-void loop()
-{
+void loop() {
+
+    mqttLoop();
     led.loop();
-    mqtt.loop();
-    timer.run();
 
     checkKnob(knob.state(), COMPONENT_KNOB);
     checkButton(ledbtn.state(), COMPONENT_LEDBTN);
     checkButton(encbtn.state(), COMPONENT_ENCBTN);
     checkButton(mscbtn.state(), COMPONENT_MSCBTN);
-
-    if (mqtt.connected()) {
-        timer.disable(connectTimer);
-    } else {
-        timer.enable(connectTimer);
-    }
 
 }
 
@@ -133,116 +120,131 @@ void loop()
 // MQTT Connection Maintenance
 // ******************************
 
-void mqttConnect() {
-    if (!mqtt.connected()) {
-        if (mqtt.connect(DEVICE_ID)) {
-            mqttSubscribe("setup/#");
-            mqttSubscribe("control/#");
-            led.color("green");
-        } else {
-            led.color("red");
-        }
-    }
+void onConnect() {
+    led.color("green");
 }
 
-void mqttSubscribe(char* topic) {
-
-    // This makes it so that every event that is subscribed
-    // is prefixed in the /dev/{DEVICE_ID}/ namespace.
-
-    String devTopic = "dev/" + Spark.deviceID() + "/";
-    String newTopic = String(topic);
-    String fullTopic = devTopic + newTopic;
-    char charTopic[fullTopic.length() + 1];
-    fullTopic.toCharArray(charTopic, fullTopic.length() + 1);
-
-    mqtt.subscribe(charTopic, 1);
+void onDisconnect() {
+    led.color("red");
 }
 
-void mqttPublish(char* topic, char* payload) {
+void mqttCustomMessageHandler(char** topic, char* msg) {
 
-    // This makes it so that every event that is published
-    // is prefixed in the /dev/{DEVICE_ID}/ namespace.
-
-    String devTopic = "dev/" + Spark.deviceID() + "/";
-    String newTopic = String(topic);
-    String fullTopic = devTopic + newTopic;
-    char charTopic[fullTopic.length() + 1];
-    fullTopic.toCharArray(charTopic, fullTopic.length() + 1);
-
-    mqtt.publish(charTopic, payload);
-
-}
-
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
-
-    char msg[length];
-    String ps = String((const char*) payload);
-    ps.toCharArray(msg, length + 1);
-
-    String ts = String(topic);
-    String tps = ts.substring(29, ts.length() + 1);
-    char tpc[ts.length() + 1];
-    tps.toCharArray(tpc, ts.length() + 1);
-
-    mqttPublish("log/callback/topic", tpc);
-    mqttPublish("log/callback/message", msg);
+    int intmsg = atoi(msg);
 
     // ******************************
     // Incoming Event Handling
     // ******************************
 
+    // topic[0] = dev
+    // topic[1] = {device id}
+    // topic[2] = setup || control
+    // topic[3] = whatever
+    // topic[4] = ...
 
-    if (tps == "control/power") {
-        mqttPublish("log/callback/power", "matched");
+    if ( equals(topic[2], "setup") ) {
+        if ( equals(topic[3], "default") ) {
+            if ( equals(topic[4], "radio") ) {
+                if ( equals(topic[5], "station") ) {
+                    DEFAULT_RADIO_STATION = intmsg;
+                }
+            }
+        }
+    } else if ( equals(topic[2], "control") ) {
 
-        if (strcmp(msg, "on") == 0) {
-            audioPowerOn();
-            mqttPublish("log/callback/power/on", "matched");
+        mqttLog("control");
+
+        if ( equals(topic[3], "status") ) {
+
+            mqttLog("status");
+            sendStatus();
+
+        } else if ( equals(topic[3], "power") ) {
+
+            mqttLog("control/power");
+
+            // POWER CONTROLS
+
+            if (equals(msg, "on")) {
+                ampPowerOn();
+            }
+
+            if (equals(msg, "off")) {
+                ampPowerOff();
+            }
+
+            if (equals(msg, "toggle")) {
+                ampPowerToggle();
+            }
+
+        } else if ( equals(topic[3], "vol") ) {
+
+            mqttLog("control/vol");
+
+            // VOLUME CONTROLS
+
+            if ( equals(msg, "low") ) {
+
+                ampSetVolume(AMP_VOLUME_LOW);
+
+            } else if ( equals(msg, "med")) {
+
+                ampSetVolume(AMP_VOLUME_MED);
+
+            } else if ( equals(msg, "high") ) {
+
+                ampSetVolume(AMP_VOLUME_HIGH);
+
+            } else if ( equals(topic[4], "set") ) {
+
+                ampSetVolume(intmsg);
+
+            }
+
+        } else if (equals(topic[3], "radio")) {
+
+            mqttLog("control/radio");
+
+            // RADIO CONTROLS
+
+            if (equals(topic[4], "station")) {
+
+                mqttLog("control/radio/station");
+
+                if (equals(msg, "house")) {
+                    radioSetStation(DEFAULT_RADIO_STATION);
+                } else {
+                    radioSetStation(intmsg);
+                }
+
+            } else if (equals(topic[4], "vol")) {
+
+                mqttLog("control/radio/vol");
+                radioSetVolume(intmsg);
+
+            }
+
+        } else if (equals(topic[3], "led")) {
+
+            mqttLog("control/led");
+
+            // LED CONTROLS
+
+            if (equals(topic[4], "color")) {
+
+                mqttLog("control/led/color");
+                led.color(msg);
+
+            } else if (equals(topic[4], "intensity")) {
+
+                mqttLog("control/led/intensity");
+                led.intensity(intmsg);
+
+            }
+
         }
 
-        if (strcmp(msg, "off") == 0) {
-            mqttPublish("log/callback/power/off", "matched");
-            audioPowerOff();
-        }
     }
-
-    if (tps == "control/vol") {
-        mqttPublish("log/callback/vol", "matched");
-
-        if (strcmp(msg, "low") == 0) {
-            audioVolumeSet(VOL_LEVEL_LOW);
-
-        } else if (strcmp(msg, "med") == 0) {
-            audioVolumeSet(VOL_LEVEL_MED);
-
-        } else if (strcmp(msg, "high") == 0) {
-            audioVolumeSet(VOL_LEVEL_HIGH);
-
-        } else {
-            int level = ps.toInt();
-            audioVolumeSet(level);
-
-        }
-    }
-
-    if (tps == "control/radio/station") {
-        mqttPublish("log/callback/radio/station", "matched");
-        int station = ps.toInt();
-        radio.setChannel(station);
-    }
-
-    if (tps == "control/radio/vol") {
-        mqttPublish("log/callback/radio/vol", "matched");
-        int level = ps.toInt();
-        radio.setVolume(level);
-    }
-
-    if (tps == "control/led") {
-        mqttPublish("log/callback/led", "matched");
-        led.color(msg);
-    }
-
 
 }
 
@@ -254,12 +256,12 @@ void checkKnob(char state, String comp) {
 
     switch (state) {
         case '>':
-            audioVolumeUp();
-            sendAudioVolumeLevel();
+            ampVolumeUp();
+            sendAmpVolume();
             break;
         case '<':
-            audioVolumeDown();
-            sendAudioVolumeLevel();
+            ampVolumeDown();
+            sendAmpVolume();
             break;
     }
 
@@ -273,7 +275,7 @@ void checkButton(char state, String comp) {
     if (comp == COMPONENT_ENCBTN) {
        switch (state) {
             case 'P':
-                audioTogglePower();
+                ampPowerToggle();
                 break;
        }
     }
@@ -297,80 +299,131 @@ void checkButton(char state, String comp) {
 }
 
 // ******************************
-// Amplifier Commands
+// Send Device Status
 // ******************************
 
-void audioPowerOn() {
+void sendStatus() {
+
+    char vol1[2] = "";
+    char vol2[2] = "";
+    char chn1[3] = "";
+    char ledi[3] = "";
+    char leds[3] = "";
+
+    itoa(AMP_VOLUME, vol1, 10);
+    itoa(RADIO_VOLUME, vol2, 10);
+    itoa(RADIO_STATION, chn1, 10);
+    itoa(led.getIntensity(), ledi, 10);
+
+    if (led.getState() == 1) {
+        strcpy(leds, "on");
+    } else {
+        strcpy(leds, "off");
+    }
+
+    if (IS_AUDIO_POWERED) {
+        mqttPublish("status/amp/power", "on");
+    } else {
+        mqttPublish("status/amp/power", "off");
+    }
+
+    mqttPublish("status/amp/vol", vol1);
+    mqttPublish("status/radio/vol", vol2);
+    mqttPublish("status/radio/station", chn1);
+
+    mqttPublish("status/led/state", leds);
+    mqttPublish("status/led/intensity", ledi);
+    mqttPublish("status/led/color", led.getColor());
+}
+
+void sendAmpVolume() {
+    char vol[2];
+    itoa(AMP_VOLUME, vol, 10);
+    mqttPublish("status/amp/vol", vol);
+}
+
+// ******************************
+// Radio Commands
+// ******************************
+
+void radioSetVolume(int level) {
+    radio.setVolume(level);
+    RADIO_VOLUME = level;
+}
+
+void radioSetStation(int station) {
+    radio.setChannel(station);
+    RADIO_STATION = station;
+}
+
+// ******************************
+// Amplifier Controls
+// ******************************
+
+void ampPowerOn() {
     digitalWrite(PIN_STBY, HIGH);
     IS_AUDIO_POWERED = true;
-    audioVolumeSet(VOL_LEVEL_DEFAULT);
-    mqttPublish("status/power", "on");
+    ampSetVolume(AMP_VOLUME_DEFAULT);
+    mqttPublish("status/amp/power", "on");
     led.on();
 }
 
-void audioPowerOff() {
-    audioVolumeSet(0);
+void ampPowerOff() {
+    ampSetVolume(0);
     IS_AUDIO_POWERED = false;
     digitalWrite(PIN_STBY, LOW);
-    mqttPublish("status/power", "off");
+    mqttPublish("status/amp/power", "off");
     led.off();
 }
 
-void audioTogglePower() {
+void ampPowerToggle() {
     if (IS_AUDIO_POWERED) {
-        audioPowerOff();
+        ampPowerOff();
     } else {
-        audioPowerOn();
+        ampPowerOn();
     }
 }
 
-void audioVolumeReset() {
+void ampVolumeReset() {
     for (int i=0; i<=100; i++) {
-        audioVolumeDown();
+        ampVolumeDown();
         delay(10);
     }
-    VOL_LEVEL = 0;
-    sendAudioVolumeLevel();
+    AMP_VOLUME = 0;
+    sendAmpVolume();
 }
 
-void audioVolumeUp() {
+void ampVolumeUp() {
     delay(5);
     digitalWrite(PIN_VOLUP, LOW);
     delay(5);
     digitalWrite(PIN_VOLUP, HIGH);
-    if (VOL_LEVEL < 64) {
-        VOL_LEVEL++;
+    if (AMP_VOLUME < 64) {
+        AMP_VOLUME++;
     }
 }
 
-void audioVolumeDown() {
+void ampVolumeDown() {
     delay(5);
     digitalWrite(PIN_VOLDN, LOW);
     delay(5);
     digitalWrite(PIN_VOLDN, HIGH);
-    if (VOL_LEVEL > 0) {
-        VOL_LEVEL--;
+    if (AMP_VOLUME > 0) {
+        AMP_VOLUME--;
     }
 }
 
-
-void sendAudioVolumeLevel() {
-    char level [2];
-    sprintf (level, "%d", VOL_LEVEL);
-    mqttPublish("status/vol", level);
-}
-
-void audioVolumeSet(int level) {
-    if (level > VOL_LEVEL) {
-        for (int i=VOL_LEVEL; i<level; i++) {
-            audioVolumeUp();
+void ampSetVolume(int level) {
+    if (level > AMP_VOLUME) {
+        for (int i=AMP_VOLUME; i<level; i++) {
+            ampVolumeUp();
             delay(10);
         }
     } else {
-        for (int i=VOL_LEVEL; i>level; i--) {
-            audioVolumeDown();
+        for (int i=AMP_VOLUME; i>level; i--) {
+            ampVolumeDown();
             delay(10);
         }
     }
-    sendAudioVolumeLevel();
+    sendAmpVolume();
 }

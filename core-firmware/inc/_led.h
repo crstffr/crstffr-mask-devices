@@ -19,6 +19,9 @@ class LED
         void change();
         void calcFade();
         void calcBlink();
+        int getState();
+        int getIntensity();
+        char* getColor();
 
     private:
         int _pinR;
@@ -29,6 +32,7 @@ class LED
         int _b;
         int _state;
         int _blink;
+        char* _color;
         bool _fading;
         bool _blinking;
         int _intensity;
