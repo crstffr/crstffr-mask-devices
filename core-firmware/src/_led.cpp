@@ -55,19 +55,17 @@ void LED::rgb(int r, int g, int b) {
 
 void LED::dim() {
     if (_state == 1) {
-        if (_intensity == 0) {
+        if (_intensity <= 1) {
             intensity(_intensityMax);
-        } else if (_intensity > 5) {
-            intensity(5);
         } else {
-            intensity(0);
+            intensity(_intensity / 2);
         }
     }
 }
 
 void LED::intensity(int value) {
+    _intensity = value;
     if (_state == 1) {
-        _intensity = value;
         int r = int((_r / 100) * value);
         int g = int((_g / 100) * value);
         int b = int((_b / 100) * value);
@@ -79,7 +77,6 @@ void LED::intensity(int value) {
 
 void LED::setMaxIntensity(int value) {
     _intensityMax = value;
-    _intensity = value;
 }
 
 void LED::fade() {

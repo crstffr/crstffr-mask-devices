@@ -6,8 +6,8 @@ void mqttConnect();
 void mqttSubscribe(char* topic);
 void mqttPublish(char* topic, char* payload);
 void mqttCallback(char* topic, byte* payload, unsigned int length);
-void mqttCustomMessageHandler(char** topic, char* msg);
-void mqttDefaultMessageHandler(char** topic, char* msg);
+void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, char* msg);
+void mqttDefaultMessageHandler(char* topic, char** topicParts, int topicCount, char* msg);
 void mqttLog(char* topic, char* msg);
 void mqttLog(char* topic);
 
@@ -17,18 +17,22 @@ int connectTimer;
 callback connectCallback;
 callback disconnectCallback;
 
-char SLASH[] = "/";
+const char SLASH[] = "/";
 char DEVICE_ID[25];
 bool DEBUG_LOG = false;
 bool CONNECTED = false;
 
 String MQTT_DEVICE_PREFIX;
+const int DEVICE_PREFIX_LENGTH = 30;
+char MQTT_DEVICE_PREFIX_CHAR[DEVICE_PREFIX_LENGTH];
 PubSubClient mqtt(MQTT_HOST, 1883, mqttCallback, tcp);
 
 void noop() {}
 
 void mqttSetup(callback onConnect, callback onDisconnect) {
     MQTT_DEVICE_PREFIX = "dev/" + Spark.deviceID() + "/";
+    MQTT_DEVICE_PREFIX.toCharArray(MQTT_DEVICE_PREFIX_CHAR, DEVICE_PREFIX_LENGTH);
+
     String deviceID = Spark.deviceID();
     deviceID.toCharArray(DEVICE_ID, 25);
 
@@ -92,62 +96,58 @@ void mqttPublish(char* topic, char* payload) {
 }
 
 
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
+void mqttCallback(char* fullTopic, byte* payload, unsigned int length) {
 
     if (length == 0) { return; }
 
     char msg[length];
     int topicCount = 0;
     char* topicChunk;
+    char topicShort[strlen(fullTopic)];
 
     String payloadStr = String((const char*) payload);
     payloadStr.toCharArray(msg, length + 1);
-    topicChunk = strpbrk (topic, SLASH);
+    topicChunk = strpbrk(fullTopic, SLASH);
 
     while (topicChunk != NULL) {
         topicChunk = strpbrk (topicChunk+1, SLASH);
+        if (topicCount == 0) strcpy(topicShort, topicChunk);
         topicCount++;
     }
 
+    // this trims the slash from the front of the topic
+    memmove(topicShort, topicShort+1, strlen(topicShort));
+
+    // split all the parts into an array
     char* topicParts[topicCount];
 
     if (topicCount > 0) {
-        topicParts[0] = strtok(topic, SLASH);
-        for(int i = 1; i <= topicCount; i++) {
+        strtok(fullTopic, SLASH); // dev
+        strtok(NULL, SLASH);  // {deviceID}
+        for(int i = 1; i < topicCount; i++) {
             topicParts[i] = strtok (NULL, SLASH);
-            mqttLog("callback/topic", topicParts[i]);
+            mqttLog("callback/topicPart", topicParts[i]);
         }
     }
 
+    mqttLog("callback/topic", topicShort);
     mqttLog("callback/message", msg);
 
-    mqttDefaultMessageHandler(topicParts, msg);
-    mqttCustomMessageHandler(topicParts, msg);
+    mqttDefaultMessageHandler(topicShort, topicParts, topicCount - 1, msg);
+    mqttCustomMessageHandler(topicShort, topicParts, topicCount - 1, msg);
 
 }
 
-void mqttDefaultMessageHandler(char** topic, char* msg) {
+void mqttDefaultMessageHandler(char* topic, char** topicParts, int topicCount, char* msg) {
+
+    //int intmsg = atoi(msg);
+    bool boolmsg = equals(msg, "true");
 
     // Default setup actions that apply to all devices,
     // made up mostly of setup and configuration overrides.
 
-    if ( equals(topic[2], "setup") ) {
-
-        // DEVICE SETUP
-
-        mqttLog("setup");
-
-        if ( equals(topic[3], "debug") ) {
-            mqttLog("setup/debug");
-            if (equals(msg, "true")) {
-                mqttLog("setup/debug/true");
-                DEBUG_LOG = true;
-            } else if (equals(msg, "false")) {
-                mqttLog("setup/debug/false");
-                DEBUG_LOG = false;
-            }
-        }
-
+    if (equals(topic, "setup/debug")) {
+        DEBUG_LOG = boolmsg;
     }
 
 }

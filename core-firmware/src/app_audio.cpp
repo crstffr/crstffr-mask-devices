@@ -34,13 +34,15 @@ String COMPONENT_VOLUME = "6";
 int  AMP_VOLUME = 0;
 int  RADIO_VOLUME = 0;
 int  RADIO_STATION = 0;
-bool IS_AUDIO_POWERED = false;
+bool IS_CONNECTED = false;
+bool IS_AMP_POWERED = false;
+bool KNOB_ADJUSTS_VOLUME = true;
 
 // ******************************
 // Function Prototype Definitions
 // ******************************
 
-void sendStatus();
+void radioSkip();
 void onConnect();
 void onDisconnect();
 void ampPowerOn();
@@ -49,7 +51,11 @@ void ampPowerToggle();
 void ampVolumeUp();
 void ampVolumeDown();
 void ampVolumeReset();
+void sendAllStatus();
+void sendAmpStatus();
 void sendAmpVolume();
+void sendLEDStatus();
+void sendRadioStatus();
 void ampSetVolume(int level);
 void radioSetVolume(int level);
 void radioSetStation(int station);
@@ -92,11 +98,8 @@ void setup() {
     digitalWrite(PIN_VOLDN, HIGH);
 
     led.setMaxIntensity(MAX_LED_INTENSITY);
+    led.intensity(DEFAULT_LED_INTENSITY);
     led.color("red");
-
-    if (AMP_POWER_ON_BOOT) {
-        ampPowerOn();
-    }
 
 }
 
@@ -117,136 +120,22 @@ void loop() {
 }
 
 // ******************************
-// MQTT Connection Maintenance
+// Connection State Callbacks
 // ******************************
 
 void onConnect() {
     led.color("green");
+    IS_CONNECTED = true;
+    mqttPublish("action/configure", "true");
+    mqttPublish("action/connected", "true");
 }
 
 void onDisconnect() {
     led.color("red");
+    IS_CONNECTED = false;
 }
 
-void mqttCustomMessageHandler(char** topic, char* msg) {
 
-    int intmsg = atoi(msg);
-
-    // ******************************
-    // Incoming Event Handling
-    // ******************************
-
-    // topic[0] = dev
-    // topic[1] = {device id}
-    // topic[2] = setup || control
-    // topic[3] = whatever
-    // topic[4] = ...
-
-    if ( equals(topic[2], "setup") ) {
-        if ( equals(topic[3], "default") ) {
-            if ( equals(topic[4], "radio") ) {
-                if ( equals(topic[5], "station") ) {
-                    DEFAULT_RADIO_STATION = intmsg;
-                }
-            }
-        }
-    } else if ( equals(topic[2], "control") ) {
-
-        mqttLog("control");
-
-        if ( equals(topic[3], "status") ) {
-
-            mqttLog("status");
-            sendStatus();
-
-        } else if ( equals(topic[3], "power") ) {
-
-            mqttLog("control/power");
-
-            // POWER CONTROLS
-
-            if (equals(msg, "on")) {
-                ampPowerOn();
-            }
-
-            if (equals(msg, "off")) {
-                ampPowerOff();
-            }
-
-            if (equals(msg, "toggle")) {
-                ampPowerToggle();
-            }
-
-        } else if ( equals(topic[3], "vol") ) {
-
-            mqttLog("control/vol");
-
-            // VOLUME CONTROLS
-
-            if ( equals(msg, "low") ) {
-
-                ampSetVolume(AMP_VOLUME_LOW);
-
-            } else if ( equals(msg, "med")) {
-
-                ampSetVolume(AMP_VOLUME_MED);
-
-            } else if ( equals(msg, "high") ) {
-
-                ampSetVolume(AMP_VOLUME_HIGH);
-
-            } else if ( equals(topic[4], "set") ) {
-
-                ampSetVolume(intmsg);
-
-            }
-
-        } else if (equals(topic[3], "radio")) {
-
-            mqttLog("control/radio");
-
-            // RADIO CONTROLS
-
-            if (equals(topic[4], "station")) {
-
-                mqttLog("control/radio/station");
-
-                if (equals(msg, "house")) {
-                    radioSetStation(DEFAULT_RADIO_STATION);
-                } else {
-                    radioSetStation(intmsg);
-                }
-
-            } else if (equals(topic[4], "vol")) {
-
-                mqttLog("control/radio/vol");
-                radioSetVolume(intmsg);
-
-            }
-
-        } else if (equals(topic[3], "led")) {
-
-            mqttLog("control/led");
-
-            // LED CONTROLS
-
-            if (equals(topic[4], "color")) {
-
-                mqttLog("control/led/color");
-                led.color(msg);
-
-            } else if (equals(topic[4], "intensity")) {
-
-                mqttLog("control/led/intensity");
-                led.intensity(intmsg);
-
-            }
-
-        }
-
-    }
-
-}
 
 // ******************************
 // Knob Handling
@@ -254,15 +143,32 @@ void mqttCustomMessageHandler(char** topic, char* msg) {
 
 void checkKnob(char state, String comp) {
 
-    switch (state) {
-        case '>':
-            ampVolumeUp();
-            sendAmpVolume();
-            break;
-        case '<':
-            ampVolumeDown();
-            sendAmpVolume();
-            break;
+    if (KNOB_ADJUSTS_VOLUME) {
+
+        switch (state) {
+            case '>':
+                ampVolumeUp();
+                sendAmpVolume();
+                mqttPublish("action/enc","up");
+                break;
+            case '<':
+                ampVolumeDown();
+                sendAmpVolume();
+                mqttPublish("action/enc","down");
+                break;
+        }
+
+    } else {
+
+        switch (state) {
+            case '>':
+                mqttPublish("action/enc","up");
+                break;
+            case '<':
+                mqttPublish("action/enc","down");
+                break;
+        }
+
     }
 
 }
@@ -272,74 +178,67 @@ void checkKnob(char state, String comp) {
 // ******************************
 
 void checkButton(char state, String comp) {
-    if (comp == COMPONENT_ENCBTN) {
-       switch (state) {
-            case 'P':
-                ampPowerToggle();
-                break;
-       }
-    }
-    if (comp == COMPONENT_LEDBTN) {
-       switch (state) {
-            case 'P':
-                led.dim();
-                break;
+
+    if (IS_CONNECTED) {
+
+        if (comp == COMPONENT_ENCBTN) {
+           switch (state) {
+                case 'P':
+                    mqttPublish("action/button/enc","press");
+                    break;
+                case 'H':
+                    mqttPublish("action/button/enc","hold");
+                    break;
+           }
         }
-    }
-    if (comp == COMPONENT_MSCBTN) {
-       switch (state) {
-            case 'P':
-                mqttPublish("action/button/misc","press");
-                break;
-            case 'H':
-                mqttPublish("action/button/misc","hold");
-                break;
+        if (comp == COMPONENT_LEDBTN) {
+           switch (state) {
+                case 'P':
+                    mqttPublish("action/button/led","press");
+                    break;
+                case 'H':
+                    mqttPublish("action/button/led","hold");
+                    break;
+            }
         }
-    }
-}
+        if (comp == COMPONENT_MSCBTN) {
+           switch (state) {
+                case 'P':
+                    mqttPublish("action/button/misc","press");
+                    break;
+                case 'H':
+                    mqttPublish("action/button/misc","hold");
+                    break;
+            }
+        }
 
-// ******************************
-// Send Device Status
-// ******************************
-
-void sendStatus() {
-
-    char vol1[2] = "";
-    char vol2[2] = "";
-    char chn1[3] = "";
-    char ledi[3] = "";
-    char leds[3] = "";
-
-    itoa(AMP_VOLUME, vol1, 10);
-    itoa(RADIO_VOLUME, vol2, 10);
-    itoa(RADIO_STATION, chn1, 10);
-    itoa(led.getIntensity(), ledi, 10);
-
-    if (led.getState() == 1) {
-        strcpy(leds, "on");
     } else {
-        strcpy(leds, "off");
+
+        if (comp == COMPONENT_ENCBTN) {
+           switch (state) {
+                case 'P':
+                    ampPowerToggle();
+                    break;
+           }
+        }
+        if (comp == COMPONENT_LEDBTN) {
+           switch (state) {
+                case 'P':
+                    led.dim();
+                    break;
+            }
+        }
+        if (comp == COMPONENT_MSCBTN) {
+           switch (state) {
+                case 'P':
+                    radioSkip();
+                    break;
+            }
+        }
+
     }
 
-    if (IS_AUDIO_POWERED) {
-        mqttPublish("status/amp/power", "on");
-    } else {
-        mqttPublish("status/amp/power", "off");
-    }
 
-    mqttPublish("status/amp/vol", vol1);
-    mqttPublish("status/radio/vol", vol2);
-    mqttPublish("status/radio/station", chn1);
-
-    mqttPublish("status/led/state", leds);
-    mqttPublish("status/led/intensity", ledi);
-    mqttPublish("status/led/color", led.getColor());
-}
-
-void sendAmpVolume() {
-    char vol[2];
-    itoa(AMP_VOLUME, vol, 10);
-    mqttPublish("status/amp/vol", vol);
 }
 
 // ******************************
@@ -356,28 +255,49 @@ void radioSetStation(int station) {
     RADIO_STATION = station;
 }
 
+void radioSkip() {
+    switch (RADIO_STATION) {
+        case 879:
+            radioSetStation(893);
+            break;
+        case 893:
+            radioSetStation(911);
+            break;
+        case 911:
+            radioSetStation(937);
+            break;
+        case 937:
+            radioSetStation(971);
+            break;
+        case 971:
+            radioSetStation(1013);
+            break;
+        default:
+            radioSetStation(879);
+            break;
+    }
+}
+
 // ******************************
-// Amplifier Controls
+// Amplifier Commands
 // ******************************
 
 void ampPowerOn() {
-    digitalWrite(PIN_STBY, HIGH);
-    IS_AUDIO_POWERED = true;
-    ampSetVolume(AMP_VOLUME_DEFAULT);
-    mqttPublish("status/amp/power", "on");
     led.on();
+    digitalWrite(PIN_STBY, HIGH);
+    ampSetVolume(AMP_VOLUME_DEFAULT);
+    IS_AMP_POWERED = true;
 }
 
 void ampPowerOff() {
-    ampSetVolume(0);
-    IS_AUDIO_POWERED = false;
-    digitalWrite(PIN_STBY, LOW);
-    mqttPublish("status/amp/power", "off");
     led.off();
+    ampSetVolume(0);
+    digitalWrite(PIN_STBY, LOW);
+    IS_AMP_POWERED = false;
 }
 
 void ampPowerToggle() {
-    if (IS_AUDIO_POWERED) {
+    if (IS_AMP_POWERED) {
         ampPowerOff();
     } else {
         ampPowerOn();
@@ -390,7 +310,6 @@ void ampVolumeReset() {
         delay(10);
     }
     AMP_VOLUME = 0;
-    sendAmpVolume();
 }
 
 void ampVolumeUp() {
@@ -425,5 +344,227 @@ void ampSetVolume(int level) {
             delay(10);
         }
     }
+}
+
+
+// ******************************
+// Send Device Status
+// ******************************
+
+void sendAllStatus() {
+
+    sendAmpStatus();
+    sendLEDStatus();
+    sendRadioStatus();
+
+}
+
+void sendAmpStatus() {
+
+    char knob[5];
+    char powered[3];
+
     sendAmpVolume();
+
+    strcpy(powered,(IS_AMP_POWERED) ? "on" : "off");
+    mqttPublish("status/amp/power", powered);
+
+    strcpy(knob,(KNOB_ADJUSTS_VOLUME) ? "true" : "false");
+    mqttPublish("status/knob/adjusts/volume", knob);
+
+}
+
+void sendAmpVolume() {
+    char vol[2];
+    itoa(AMP_VOLUME, vol, 10);
+    mqttPublish("status/amp/vol", vol);
+}
+
+void sendRadioStatus() {
+
+    char vol[2] = "";
+    char chn[3] = "";
+
+    itoa(RADIO_VOLUME, vol, 10);
+    itoa(RADIO_STATION, chn, 10);
+
+    mqttPublish("status/radio/vol", vol);
+    mqttPublish("status/radio/station", chn);
+
+}
+
+void sendLEDStatus() {
+
+    char ledi[3] = "";
+    char leds[3] = "";
+
+    strcpy(leds, (led.getState() == 1) ? "on" : "off");
+    itoa(led.getIntensity(), ledi, 10);
+
+    mqttPublish("status/led/state", leds);
+    mqttPublish("status/led/intensity", ledi);
+    mqttPublish("status/led/color", led.getColor());
+
+}
+
+
+// ******************************
+// Handle Incoming Messages
+// ******************************
+
+void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, char* msg) {
+
+    int intmsg = atoi(msg);
+    bool boolmsg = equals(msg, "true");
+
+    char topicsize[2];
+    itoa(topicCount, topicsize, 10);
+    mqttLog("topic/count", topicsize);
+
+    // ******************************
+    // Incoming Data
+    // ******************************
+
+    // topicParts[1] = setup || control
+    // topicParts[2] = ...
+    // topicParts[3] = ...
+
+    // *********************
+    // CUSTOM SETUP
+    // *********************
+
+    if (equals(topic, "setup/default/radio/station")) {
+        DEFAULT_RADIO_STATION = intmsg;
+    }
+
+    if (equals(topic, "setup/knob/adjusts/volume")) {
+        KNOB_ADJUSTS_VOLUME = boolmsg;
+    }
+
+    if (equals(topic, "setup/led/max/intensity")) {
+        led.setMaxIntensity(intmsg);
+    }
+
+    // *********************
+    // REQUESTS FOR STATUS
+    // *********************
+
+    if (equals(topic, "control/status/all")) {
+        sendAllStatus();
+    }
+
+    if (equals(topic, "control/configure")) {
+        mqttPublish("action/configure", "true");
+    }
+
+    if (equals(topic, "control/status/amp")) {
+        sendAmpStatus();
+    }
+
+    if (equals(topic, "control/status/vol")) {
+        sendAmpVolume();
+    }
+
+    if (equals(topic, "control/status/led")) {
+        sendLEDStatus();
+    }
+
+    if (equals(topic, "control/status/radio")) {
+        sendRadioStatus();
+    }
+
+    // *********************
+    // AMP POWER CONTROLS
+    // *********************
+
+    if (equals(topic, "control/power")) {
+
+        if (equals(msg, "on")) {
+            ampPowerOn();
+        }
+
+        if (equals(msg, "off")) {
+            ampPowerOff();
+        }
+
+        if (equals(msg, "toggle")) {
+            ampPowerToggle();
+        }
+
+    }
+
+    // *********************
+    // AMP VOLUME CONTROLS
+    // *********************
+
+    if (equals(topic, "control/volume")) {
+
+        if (equals(msg, "up") ) {
+            ampVolumeUp();
+        }
+        
+        if (equals(msg, "down") ) {
+            ampVolumeDown();
+        }
+
+        if (equals(msg, "reset") ) {
+            ampVolumeReset();
+        }
+
+        if (equals(msg, "low") ) {
+            ampSetVolume(AMP_VOLUME_LOW);
+        }
+
+        if (equals(msg, "med")) {
+            ampSetVolume(AMP_VOLUME_MED);
+        }
+
+        if (equals(msg, "high") ) {
+            ampSetVolume(AMP_VOLUME_HIGH);
+        }
+
+    }
+
+    if (equals(topic, "control/volume/set")) {
+        ampSetVolume(intmsg);
+    }
+
+    // *********************
+    // RADIO CONTROLS
+    // *********************
+
+    if (equals(topic, "control/radio")) {
+        if (equals(msg, "skip") ) {
+            radioSkip();
+        }
+    }
+
+    if (equals(topic, "control/radio/volume")) {
+        radioSetVolume(intmsg);
+    }
+
+    if (equals(topic, "control/radio/station")) {
+        if (equals(msg, "house")) {
+            radioSetStation(DEFAULT_RADIO_STATION);
+        } else {
+            radioSetStation(intmsg);
+        }
+    }
+
+    // *********************
+    // RGB LED CONTROLS
+    // *********************
+
+    if (equals(topic, "control/led/dim")) {
+        led.dim();
+    }
+
+    if (equals(topic, "control/led/color")) {
+        led.color(msg);
+    }
+
+    if (equals(topic, "control/led/intensity")) {
+        led.intensity(intmsg);
+    }
+
 }
