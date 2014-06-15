@@ -1,3 +1,4 @@
+typedef void (*callback)(void);
 
 extern char* itoa(int a, char* buffer, unsigned char radix);
 

@@ -1,26 +1,31 @@
-typedef void (*callback)(void);
+
 
 void noop();
 void mqttLoop();
 void mqttConnect();
+void mqttKeepAlive();
+void mqttDisconnected();
 void mqttSubscribe(char* topic);
 void mqttPublish(char* topic, char* payload);
 void mqttCallback(char* topic, byte* payload, unsigned int length);
-void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, char* msg);
-void mqttDefaultMessageHandler(char* topic, char** topicParts, int topicCount, char* msg);
+void mqttCustomMessageHandler(char* shortTopic, char** topicParts, int topicCount, char* msg);
+void mqttDefaultMessageHandler(char* incomingTopic, char* shortTopic, char* msg);
 void mqttLog(char* topic, char* msg);
 void mqttLog(char* topic);
 
 TCPClient tcp;
 SimpleTimer timer;
 int connectTimer;
+int keepAliveTimer;
+int keepAliveTimeout;
 callback connectCallback;
 callback disconnectCallback;
 
 const char SLASH[] = "/";
 char DEVICE_ID[25];
 bool DEBUG_LOG = false;
-bool CONNECTED = false;
+bool BROKER_CONNECTED = false;
+bool SERVER_CONNECTED = false;
 
 String MQTT_DEVICE_PREFIX;
 const int DEVICE_PREFIX_LENGTH = 30;
@@ -40,6 +45,8 @@ void mqttSetup(callback onConnect, callback onDisconnect) {
     disconnectCallback = onDisconnect;
 
     connectTimer = timer.setInterval(1000, mqttConnect);
+    keepAliveTimer = timer.setInterval(5000, mqttKeepAlive);
+
     mqttConnect();
 }
 
@@ -50,25 +57,51 @@ void mqttLoop() {
     timer.run();
     if (mqtt.connected()) {
         timer.disable(connectTimer);
-        if (!CONNECTED) {
-            connectCallback();
+        if (!BROKER_CONNECTED) {
+
+            // At this point, the device has connected
+            // to the MQTT message broker, but we still
+            // don't know if the device server is ready.
+
+            // This initiates a handshake with the device
+            // server, which should respond with an event
+            // topic of "command/connect" = "SYNACK".
+
+            mqttPublish("action/connect", "SYN");
+
+            // Find the rest of the handshake process in
+            // the mqttDefaultMessageHandler().
+
         }
-        CONNECTED = true;
+        BROKER_CONNECTED = true;
     } else {
         timer.enable(connectTimer);
-        if (CONNECTED) {
+        if (BROKER_CONNECTED) {
             disconnectCallback();
         }
-        CONNECTED = false;
+        BROKER_CONNECTED = false;
     }
+}
+
+void mqttKeepAlive() {
+    keepAliveTimeout = timer.setTimeout(2000, mqttDisconnected);
+    mqttPublish("action/keepalive", "HI");
+}
+
+void mqttDisconnected() {
+    SERVER_CONNECTED = false;
+    disconnectCallback();
 }
 
 void mqttConnect() {
     if (!mqtt.connected()) {
         if (mqtt.connect(DEVICE_ID)) {
             mqttSubscribe("setup/#");
-            mqttSubscribe("control/#");
+            mqttSubscribe("command/#");
+            mqtt.subscribe("dev/all/#");
         }
+    } else {
+        mqttPublish("action/connect", "SYN");
     }
 }
 
@@ -80,7 +113,7 @@ void mqttSubscribe(char* topic) {
     String fullTopic = MQTT_DEVICE_PREFIX + String(topic);
     char charTopic[fullTopic.length() + 1];
     fullTopic.toCharArray(charTopic, fullTopic.length() + 1);
-    mqtt.subscribe(charTopic, 1);
+    mqtt.subscribe(charTopic);
 }
 
 void mqttPublish(char* topic, char* payload) {
@@ -96,33 +129,35 @@ void mqttPublish(char* topic, char* payload) {
 }
 
 
-void mqttCallback(char* fullTopic, byte* payload, unsigned int length) {
+void mqttCallback(char* incomingTopic, byte* payload, unsigned int length) {
 
     if (length == 0) { return; }
 
     char msg[length];
     int topicCount = 0;
     char* topicChunk;
-    char topicShort[strlen(fullTopic)];
+    char fullTopic[strlen(incomingTopic)];
+    char shortTopic[strlen(incomingTopic)];
+    strcpy(fullTopic, incomingTopic);
 
     String payloadStr = String((const char*) payload);
     payloadStr.toCharArray(msg, length + 1);
-    topicChunk = strpbrk(fullTopic, SLASH);
+    topicChunk = strpbrk(incomingTopic, SLASH);
 
     while (topicChunk != NULL) {
         topicChunk = strpbrk (topicChunk+1, SLASH);
-        if (topicCount == 0) strcpy(topicShort, topicChunk);
+        if (topicCount == 0) strcpy(shortTopic, topicChunk);
         topicCount++;
     }
 
     // this trims the slash from the front of the topic
-    memmove(topicShort, topicShort+1, strlen(topicShort));
+    memmove(shortTopic, shortTopic+1, strlen(shortTopic));
 
     // split all the parts into an array
     char* topicParts[topicCount];
 
     if (topicCount > 0) {
-        strtok(fullTopic, SLASH); // dev
+        strtok(incomingTopic, SLASH); // dev
         strtok(NULL, SLASH);  // {deviceID}
         for(int i = 1; i < topicCount; i++) {
             topicParts[i] = strtok (NULL, SLASH);
@@ -130,26 +165,54 @@ void mqttCallback(char* fullTopic, byte* payload, unsigned int length) {
         }
     }
 
-    mqttLog("callback/topic", topicShort);
+    mqttLog("callback/fullTopic", fullTopic);
+    mqttLog("callback/shortTopic", shortTopic);
     mqttLog("callback/message", msg);
 
-    mqttDefaultMessageHandler(topicShort, topicParts, topicCount - 1, msg);
-    mqttCustomMessageHandler(topicShort, topicParts, topicCount - 1, msg);
+    mqttCustomMessageHandler(shortTopic, topicParts, topicCount - 1, msg);
+    mqttDefaultMessageHandler(fullTopic, shortTopic, msg);
 
 }
 
-void mqttDefaultMessageHandler(char* topic, char** topicParts, int topicCount, char* msg) {
+void mqttDefaultMessageHandler(char* fullTopic, char* shortTopic, char* msg) {
 
     //int intmsg = atoi(msg);
     bool boolmsg = equals(msg, "true");
 
+    // Any response from the server means that the server
+    // is alive, so we can restart the keepAliveTimer and
+    // delete any running keepAlive timeouts.
+
+    timer.restartTimer(keepAliveTimer);
+    timer.deleteTimer(keepAliveTimeout);
+
+    // If the server broadcasts a message to all devices
+    // asking them to connect, then initiate a handshake.
+
+    if (equals(fullTopic, "dev/all/connect")) {
+        mqttPublish("action/connect", "SYN");
+        return;
+    }
+
     // Default setup actions that apply to all devices,
     // made up mostly of setup and configuration overrides.
 
-    if (equals(topic, "setup/debug")) {
+    if (equals(shortTopic, "setup/debug")) {
         DEBUG_LOG = boolmsg;
+        return;
     }
 
+    // This is the second part of the handshake handler.
+    // When the server responds with a SYNACK, then the
+    // device and the server are both alive.  Send a
+    // final acknowledgement to the server via ACK.
+
+    if (equals(shortTopic, "command/connect") && equals(msg, "SYNACK")) {
+        mqttPublish("action/connect", "ACK");
+        SERVER_CONNECTED = true;
+        connectCallback();
+        return;
+    }
 }
 
 

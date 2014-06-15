@@ -13,9 +13,9 @@ class LED
         void setMaxIntensity(int value);
         void color(char* name);
         void dim();
-        void fade();
         void blank();
-        void blink();
+        void blink(bool state);
+        void blinking();
         void change();
         void calcFade();
         void calcBlink();
@@ -31,16 +31,15 @@ class LED
         int _g;
         int _b;
         int _state;
-        int _blink;
+        int _blinkState;
+        int _blinkTimer;
         char* _color;
-        bool _fading;
-        bool _blinking;
         int _intensity;
         int _intensityMax;
         unsigned long _now;
-        unsigned long _fadeTimer;
-        unsigned long _blinkTimer;
         unsigned long _blinkGap;
+
+        SimpleTimer timer;
 };
 
 #endif

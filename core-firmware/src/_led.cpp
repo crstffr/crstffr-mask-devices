@@ -1,4 +1,5 @@
 #include "application.h"
+#include "_timer.h"
 #include "_led.h"
 
 LED::LED(int pinR, int pinG, int pinB) {
@@ -9,21 +10,21 @@ LED::LED(int pinR, int pinG, int pinB) {
     _g = 0;
     _b = 0;
     _state = 0;
-    _blink = 0;
     _blinkGap = 350;
+    _blinkState = 0;
     _intensity = 0;
     _intensityMax = 30;
     pinMode(_pinR, OUTPUT);
     pinMode(_pinG, OUTPUT);
     pinMode(_pinB, OUTPUT);
+
+    //_blinkTimer = timer.setInterval(_blinkGap, blinking);
+    //timer.disable(_blinkTimer);
 }
 
 void LED::loop() {
-    _now = millis();
-    if (_blinking) {
-        calcBlink();
-    }
-    if (_state == 1) {
+    timer.run();
+    if (_state == 1 && _blinkState == 0) {
         change();
     }
 }
@@ -63,6 +64,10 @@ void LED::dim() {
     }
 }
 
+void LED::setMaxIntensity(int value) {
+    _intensityMax = value;
+}
+
 void LED::intensity(int value) {
     _intensity = value;
     if (_state == 1) {
@@ -75,32 +80,26 @@ void LED::intensity(int value) {
     }
 }
 
-void LED::setMaxIntensity(int value) {
-    _intensityMax = value;
-}
-
-void LED::fade() {
-    _fading = true;
-    _blinking = false;
-}
-
-void LED::blink() {
-    _fading = false;
-    _blinking = true;
-    _blinkTimer = _now + _blinkGap;
-}
-
-void LED::calcBlink() {
-    if (_now > _blinkTimer) {
-        if (_blink == 0) {
-            blank();
-        } else {
-            rgb(_r,_g,_b);
-        }
-        _blink = (_blink == 0) ? 1 : 0;
-        _blinkTimer = _now + _blinkGap;
+void LED::blink(bool state) {
+    if (state) {
+        timer.enable(_blinkTimer);
+    } else {
+        timer.disable(_blinkTimer);
     }
 }
+
+void LED::blinking() {
+    if (_blinkState == 1) {
+        blank();
+    } else {
+        intensity(_intensity);
+    }
+    _blinkState = (_blinkState == 0) ? 1 : 0;
+}
+
+
+
+
 
 char* LED::getColor() {
     return _color;
@@ -116,8 +115,6 @@ int LED::getState() {
 
 void LED::color(char* color) {
 
-    _fading = false;
-    _blinking = false;
     _color = color;
 
     if (strcmp(color, "white") == 0) {

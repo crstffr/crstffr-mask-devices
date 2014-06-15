@@ -24,12 +24,12 @@ int PIN_LEDBTN = A3;
 int PIN_ENCBTN = A6;
 int PIN_MSCBTN = A7;
 
-String COMPONENT_LEDBTN = "1";
-String COMPONENT_ENCBTN = "2";
-String COMPONENT_MSCBTN = "3";
-String COMPONENT_KNOB   = "4";
-String COMPONENT_POWER  = "5";
-String COMPONENT_VOLUME = "6";
+int COMPONENT_KNOB   = 1;
+int COMPONENT_POWER  = 2;
+int COMPONENT_VOLUME = 3;
+int COMPONENT_LEDBTN = 4;
+int COMPONENT_ENCBTN = 5;
+int COMPONENT_MSCBTN = 6;
 
 int  AMP_VOLUME = 0;
 int  RADIO_VOLUME = 0;
@@ -53,14 +53,15 @@ void ampVolumeDown();
 void ampVolumeReset();
 void sendAllStatus();
 void sendAmpStatus();
+void sendPowerStatus();
 void sendAmpVolume();
 void sendLEDStatus();
 void sendRadioStatus();
 void ampSetVolume(int level);
 void radioSetVolume(int level);
 void radioSetStation(int station);
-void checkKnob(char state, String comp);
-void checkButton(char state, String comp);
+void checkKnob(char state, int comp);
+void checkButton(char state, int comp);
 
 // ******************************
 // Class instantiations
@@ -112,7 +113,7 @@ void loop() {
     mqttLoop();
     led.loop();
 
-    checkKnob(knob.state(), COMPONENT_KNOB);
+    checkKnob(knob.state(),     COMPONENT_KNOB);
     checkButton(ledbtn.state(), COMPONENT_LEDBTN);
     checkButton(encbtn.state(), COMPONENT_ENCBTN);
     checkButton(mscbtn.state(), COMPONENT_MSCBTN);
@@ -126,8 +127,6 @@ void loop() {
 void onConnect() {
     led.color("green");
     IS_CONNECTED = true;
-    mqttPublish("action/configure", "true");
-    mqttPublish("action/connected", "true");
 }
 
 void onDisconnect() {
@@ -141,7 +140,7 @@ void onDisconnect() {
 // Knob Handling
 // ******************************
 
-void checkKnob(char state, String comp) {
+void checkKnob(char state, int comp) {
 
     if (KNOB_ADJUSTS_VOLUME) {
 
@@ -177,37 +176,37 @@ void checkKnob(char state, String comp) {
 // Button Handling
 // ******************************
 
-void checkButton(char state, String comp) {
+void checkButton(char state, int comp) {
 
     if (IS_CONNECTED) {
 
         if (comp == COMPONENT_ENCBTN) {
            switch (state) {
                 case 'P':
-                    mqttPublish("action/button/enc","press");
+                    mqttPublish("action/enc-button","press");
                     break;
                 case 'H':
-                    mqttPublish("action/button/enc","hold");
+                    mqttPublish("action/enc-button","hold");
                     break;
            }
         }
         if (comp == COMPONENT_LEDBTN) {
            switch (state) {
                 case 'P':
-                    mqttPublish("action/button/led","press");
+                    mqttPublish("action/led-button","press");
                     break;
                 case 'H':
-                    mqttPublish("action/button/led","hold");
+                    mqttPublish("action/led-button","hold");
                     break;
             }
         }
         if (comp == COMPONENT_MSCBTN) {
            switch (state) {
                 case 'P':
-                    mqttPublish("action/button/misc","press");
+                    mqttPublish("action/misc-button","press");
                     break;
                 case 'H':
-                    mqttPublish("action/button/misc","hold");
+                    mqttPublish("action/misc-button","hold");
                     break;
             }
         }
@@ -224,7 +223,7 @@ void checkButton(char state, String comp) {
         if (comp == COMPONENT_LEDBTN) {
            switch (state) {
                 case 'P':
-                    led.dim();
+                    mqttConnect();
                     break;
             }
         }
@@ -287,6 +286,8 @@ void ampPowerOn() {
     digitalWrite(PIN_STBY, HIGH);
     ampSetVolume(AMP_VOLUME_DEFAULT);
     IS_AMP_POWERED = true;
+    sendAmpStatus();
+    sendLEDStatus();
 }
 
 void ampPowerOff() {
@@ -294,6 +295,8 @@ void ampPowerOff() {
     ampSetVolume(0);
     digitalWrite(PIN_STBY, LOW);
     IS_AMP_POWERED = false;
+    sendAmpStatus();
+    sendLEDStatus();
 }
 
 void ampPowerToggle() {
@@ -336,12 +339,12 @@ void ampSetVolume(int level) {
     if (level > AMP_VOLUME) {
         for (int i=AMP_VOLUME; i<level; i++) {
             ampVolumeUp();
-            delay(10);
+            //delay(10);
         }
     } else {
         for (int i=AMP_VOLUME; i>level; i--) {
             ampVolumeDown();
-            delay(10);
+            //delay(10);
         }
     }
 }
@@ -353,31 +356,33 @@ void ampSetVolume(int level) {
 
 void sendAllStatus() {
 
+    char knob[5];
+
     sendAmpStatus();
+
+    strcpy(knob,(KNOB_ADJUSTS_VOLUME) ? "true" : "false");
+    mqttPublish("status/enc/adjusts-volume", knob);
+
     sendLEDStatus();
     sendRadioStatus();
 
 }
 
-void sendAmpStatus() {
-
-    char knob[5];
+void sendPowerStatus() {
     char powered[3];
-
-    sendAmpVolume();
-
     strcpy(powered,(IS_AMP_POWERED) ? "on" : "off");
-    mqttPublish("status/amp/power", powered);
+    mqttPublish("status/power/state", powered);
+}
 
-    strcpy(knob,(KNOB_ADJUSTS_VOLUME) ? "true" : "false");
-    mqttPublish("status/knob/adjusts/volume", knob);
-
+void sendAmpStatus() {
+    sendPowerStatus();
+    sendAmpVolume();
 }
 
 void sendAmpVolume() {
     char vol[2];
     itoa(AMP_VOLUME, vol, 10);
-    mqttPublish("status/amp/vol", vol);
+    mqttPublish("status/volume/level", vol);
 }
 
 void sendRadioStatus() {
@@ -388,7 +393,7 @@ void sendRadioStatus() {
     itoa(RADIO_VOLUME, vol, 10);
     itoa(RADIO_STATION, chn, 10);
 
-    mqttPublish("status/radio/vol", vol);
+    mqttPublish("status/radio/volume", vol);
     mqttPublish("status/radio/station", chn);
 
 }
@@ -430,66 +435,88 @@ void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, ch
     // topicParts[3] = ...
 
     // *********************
+    // DEVICE IDENTIFICATION
+    // *********************
+
+    if (equals(topic, "command/identify")) {
+        mqttPublish("action/identify", DEVICE_TYPE_AUDIO);
+    }
+
+    // *********************
     // CUSTOM SETUP
     // *********************
 
+    if (equals(topic, "command/configure")) {
+        mqttPublish("action/configure", "true");
+        return;
+    }
+
     if (equals(topic, "setup/default/radio/station")) {
         DEFAULT_RADIO_STATION = intmsg;
+        return;
     }
 
     if (equals(topic, "setup/knob/adjusts/volume")) {
         KNOB_ADJUSTS_VOLUME = boolmsg;
+        return;
     }
 
     if (equals(topic, "setup/led/max/intensity")) {
         led.setMaxIntensity(intmsg);
+        return;
     }
 
     // *********************
     // REQUESTS FOR STATUS
     // *********************
 
-    if (equals(topic, "control/status/all")) {
+    if (equals(topic, "command/status/all")) {
         sendAllStatus();
+        return;
     }
 
-    if (equals(topic, "control/configure")) {
-        mqttPublish("action/configure", "true");
-    }
-
-    if (equals(topic, "control/status/amp")) {
+    if (equals(topic, "command/status/amp")) {
         sendAmpStatus();
+        return;
     }
 
-    if (equals(topic, "control/status/vol")) {
+    if (equals(topic, "command/status/vol")) {
         sendAmpVolume();
+        return;
     }
 
-    if (equals(topic, "control/status/led")) {
+    if (equals(topic, "command/status/led")) {
         sendLEDStatus();
+        return;
     }
 
-    if (equals(topic, "control/status/radio")) {
+    if (equals(topic, "command/status/radio")) {
         sendRadioStatus();
+        return;
     }
 
     // *********************
     // AMP POWER CONTROLS
     // *********************
 
-    if (equals(topic, "control/power")) {
+    if (equals(topic, "command/power/state")) {
 
-        if (equals(msg, "on")) {
+        if (equals(msg, "on") && !IS_AMP_POWERED) {
             ampPowerOn();
+            return;
         }
 
-        if (equals(msg, "off")) {
+        if (equals(msg, "off") && IS_AMP_POWERED) {
             ampPowerOff();
+            return;
         }
 
         if (equals(msg, "toggle")) {
             ampPowerToggle();
+            return;
         }
+
+        return;
 
     }
 
@@ -497,74 +524,98 @@ void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, ch
     // AMP VOLUME CONTROLS
     // *********************
 
-    if (equals(topic, "control/volume")) {
+    if (equals(topic, "command/volume/change")) {
 
         if (equals(msg, "up") ) {
             ampVolumeUp();
+            return;
         }
         
         if (equals(msg, "down") ) {
             ampVolumeDown();
+            return;
         }
 
         if (equals(msg, "reset") ) {
             ampVolumeReset();
+            return;
         }
 
         if (equals(msg, "low") ) {
             ampSetVolume(AMP_VOLUME_LOW);
+            return;
         }
 
         if (equals(msg, "med")) {
             ampSetVolume(AMP_VOLUME_MED);
+            return;
         }
 
         if (equals(msg, "high") ) {
             ampSetVolume(AMP_VOLUME_HIGH);
+            return;
         }
+
+        return;
 
     }
 
-    if (equals(topic, "control/volume/set")) {
+    if (equals(topic, "command/volume/set")) {
         ampSetVolume(intmsg);
+        return;
     }
 
     // *********************
     // RADIO CONTROLS
     // *********************
 
-    if (equals(topic, "control/radio")) {
+    if (equals(topic, "command/radio/volume")) {
+        radioSetVolume(intmsg);
+        return;
+    }
+
+    if (equals(topic, "command/radio/station")) {
         if (equals(msg, "skip") ) {
             radioSkip();
+            return;
         }
-    }
 
-    if (equals(topic, "control/radio/volume")) {
-        radioSetVolume(intmsg);
-    }
-
-    if (equals(topic, "control/radio/station")) {
         if (equals(msg, "house")) {
             radioSetStation(DEFAULT_RADIO_STATION);
+            return;
         } else {
             radioSetStation(intmsg);
+            return;
         }
+
     }
 
     // *********************
     // RGB LED CONTROLS
     // *********************
 
-    if (equals(topic, "control/led/dim")) {
+    if (equals(topic, "command/led/state")) {
+        if (equals(msg, "on")) {
+            led.on();
+        } else if (equals(msg, "off")) {
+            led.off();
+        }
+        return;
+    }
+
+    if (equals(topic, "command/led/dim")) {
         led.dim();
+        return;
     }
 
-    if (equals(topic, "control/led/color")) {
+    if (equals(topic, "command/led/color")) {
         led.color(msg);
+        return;
     }
 
-    if (equals(topic, "control/led/intensity")) {
+    if (equals(topic, "command/led/intensity")) {
         led.intensity(intmsg);
+        return;
     }
 
 }
