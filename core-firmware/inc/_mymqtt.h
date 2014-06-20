@@ -3,7 +3,6 @@
 void noop();
 void mqttLoop();
 void mqttConnect();
-void mqttKeepAlive();
 void mqttDisconnected();
 void mqttSubscribe(char* topic);
 void mqttPublish(char* topic, char* payload);
@@ -16,8 +15,6 @@ void mqttLog(char* topic);
 TCPClient tcp;
 SimpleTimer timer;
 int connectTimer;
-int keepAliveTimer;
-int keepAliveTimeout;
 callback connectCallback;
 callback disconnectCallback;
 
@@ -45,7 +42,6 @@ void mqttSetup(callback onConnect, callback onDisconnect) {
     disconnectCallback = onDisconnect;
 
     connectTimer = timer.setInterval(1000, mqttConnect);
-    keepAliveTimer = timer.setInterval(5000, mqttKeepAlive);
 
     mqttConnect();
 }
@@ -65,9 +61,9 @@ void mqttLoop() {
 
             // This initiates a handshake with the device
             // server, which should respond with an event
-            // topic of "command/connect" = "SYNACK".
+            // topic of "command/network/connect" = "SYNACK".
 
-            mqttPublish("action/connect", "SYN");
+            mqttPublish("action/network/connect", "SYN");
 
             // Find the rest of the handshake process in
             // the mqttDefaultMessageHandler().
@@ -83,26 +79,28 @@ void mqttLoop() {
     }
 }
 
-void mqttKeepAlive() {
-    keepAliveTimeout = timer.setTimeout(2000, mqttDisconnected);
-    mqttPublish("action/keepalive", "HI");
-}
-
 void mqttDisconnected() {
     SERVER_CONNECTED = false;
     disconnectCallback();
 }
 
 void mqttConnect() {
+
+    char msg[] = "1";
+    String willStr = MQTT_DEVICE_PREFIX + "action/network/disconnect";
+    int len = willStr.length() + 1;
+    char willChar[len];
+    willStr.toCharArray(willChar, len);
+
     if (!mqtt.connected()) {
-        if (mqtt.connect(DEVICE_ID)) {
+        if (mqtt.connect(DEVICE_ID, willChar, 1, 0, msg)) {
             mqttSubscribe("setup/#");
             mqttSubscribe("command/#");
             mqtt.subscribe("dev/all/#");
         }
-    } else {
-        mqttPublish("action/connect", "SYN");
     }
+
+    mqttPublish("action/network/connect", "SYN");
 }
 
 void mqttSubscribe(char* topic) {
@@ -179,18 +177,19 @@ void mqttDefaultMessageHandler(char* fullTopic, char* shortTopic, char* msg) {
     //int intmsg = atoi(msg);
     bool boolmsg = equals(msg, "true");
 
-    // Any response from the server means that the server
-    // is alive, so we can restart the keepAliveTimer and
-    // delete any running keepAlive timeouts.
-
-    timer.restartTimer(keepAliveTimer);
-    timer.deleteTimer(keepAliveTimeout);
-
     // If the server broadcasts a message to all devices
     // asking them to connect, then initiate a handshake.
 
-    if (equals(fullTopic, "dev/all/connect")) {
-        mqttPublish("action/connect", "SYN");
+    if (equals(fullTopic, "dev/all/network/connect")) {
+        mqttPublish("action/network/connect", "SYN");
+        return;
+    }
+
+    // If the server broadcasts a message to all devices
+    // to disconnect, then fire disconnect callback.
+
+    if (equals(fullTopic, "dev/all/network/disconnect")) {
+        mqttDisconnected();
         return;
     }
 
@@ -207,8 +206,8 @@ void mqttDefaultMessageHandler(char* fullTopic, char* shortTopic, char* msg) {
     // device and the server are both alive.  Send a
     // final acknowledgement to the server via ACK.
 
-    if (equals(shortTopic, "command/connect") && equals(msg, "SYNACK")) {
-        mqttPublish("action/connect", "ACK");
+    if (equals(shortTopic, "command/network/connect") && equals(msg, "SYNACK")) {
+        mqttPublish("action/network/connect", "ACK");
         SERVER_CONNECTED = true;
         connectCallback();
         return;

@@ -245,13 +245,17 @@ void checkButton(char state, int comp) {
 // ******************************
 
 void radioSetVolume(int level) {
-    radio.setVolume(level);
-    RADIO_VOLUME = level;
+    if (RADIO_VOLUME != level) {
+        radio.setVolume(level);
+        RADIO_VOLUME = level;
+    }
 }
 
 void radioSetStation(int station) {
-    radio.setChannel(station);
-    RADIO_STATION = station;
+    if (RADIO_STATION != station) {
+        radio.setChannel(station);
+        RADIO_STATION = station;
+    }
 }
 
 void radioSkip() {
