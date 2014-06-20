@@ -148,12 +148,10 @@ void checkKnob(char state, int comp) {
             case '>':
                 ampVolumeUp();
                 sendAmpVolume();
-                mqttPublish("action/enc","up");
                 break;
             case '<':
                 ampVolumeDown();
                 sendAmpVolume();
-                mqttPublish("action/enc","down");
                 break;
         }
 

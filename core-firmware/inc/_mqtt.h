@@ -29,7 +29,7 @@
 #define MQTT_MAX_PACKET_SIZE 128
 
 // MQTT_KEEPALIVE : keepAlive interval in Seconds
-#define MQTT_KEEPALIVE 3
+#define MQTT_KEEPALIVE 5
 
 #define MQTTPROTOCOLVERSION 3
 #define MQTTCONNECT     1 << 4  // Client request to connect to Server
