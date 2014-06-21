@@ -1,22 +1,41 @@
-#include "application.h"
-#include "_quadencoder.h"
+#ifndef QuadEncoder_h
+#define QuadEncoder_h
+
+class QuadEncoder
+{
+  public:
+    QuadEncoder(int pin1, int pin2);
+    char state();
+  private:
+    bool _moved;
+    int _inputPin1;
+    int _inputPin2;
+    int _val1;
+    int _val2;
+    int _oldVal1;
+    int _oldVal2;
+    int _pos;
+    int _oldPos;
+    int _turn;
+    int _turnCount;
+};
 
 QuadEncoder::QuadEncoder(int pin1, int pin2)
 {
-  pinMode(pin1, INPUT_PULLUP);
-  pinMode(pin2, INPUT_PULLUP);
-  digitalWrite(pin1, HIGH);
-  digitalWrite(pin2, HIGH);
-  _inputPin1=pin1;
-  _inputPin2=pin2;
-  _val1=1;
-  _val2=1;
-  _oldVal1=1;
-  _oldVal2=1;
-  _pos=0;
-  _oldPos=0;
-  _turn=0;
-  _turnCount=0;
+    pinMode(pin1, INPUT_PULLUP);
+    pinMode(pin2, INPUT_PULLUP);
+    digitalWrite(pin1, HIGH);
+    digitalWrite(pin2, HIGH);
+    _inputPin1=pin1;
+    _inputPin2=pin2;
+    _val1=1;
+    _val2=1;
+    _oldVal1=1;
+    _oldVal2=1;
+    _pos=0;
+    _oldPos=0;
+    _turn=0;
+    _turnCount=0;
 }
 
 char QuadEncoder::state()
@@ -67,3 +86,6 @@ char QuadEncoder::state()
       return '-';
   }
 }
+
+#endif
+

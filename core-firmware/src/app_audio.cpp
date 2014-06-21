@@ -1,7 +1,9 @@
 #include "application.h"
-#include "_common.h"
-#include "_Si4703.h"
-#include "_quadencoder.h"
+#include "_core-common.h"
+#include "_component-led.h"
+#include "_component-radio.h"
+#include "_component-button.h"
+#include "_component-quadencoder.h"
 
 // ******************************
 // Definitions
@@ -34,7 +36,6 @@ int COMPONENT_MSCBTN = 6;
 int  AMP_VOLUME = 0;
 int  RADIO_VOLUME = 0;
 int  RADIO_STATION = 0;
-bool IS_CONNECTED = false;
 bool IS_AMP_POWERED = false;
 bool KNOB_ADJUSTS_VOLUME = true;
 
@@ -42,9 +43,9 @@ bool KNOB_ADJUSTS_VOLUME = true;
 // Function Prototype Definitions
 // ******************************
 
-void radioSkip();
 void onConnect();
 void onDisconnect();
+void radioSkip();
 void ampPowerOn();
 void ampPowerOff();
 void ampPowerToggle();
@@ -55,12 +56,8 @@ void sendAllStatus();
 void sendAmpStatus();
 void sendPowerStatus();
 void sendAmpVolume();
-void sendLEDStatus();
-void sendRadioStatus();
 void ampSetVolume(int level);
-void radioSetVolume(int level);
-void radioSetStation(int station);
-void checkKnob(char state, int comp);
+void knobCheck(char state, int comp);
 void checkButton(char state, int comp);
 
 // ******************************
@@ -68,7 +65,7 @@ void checkButton(char state, int comp);
 // ******************************
 
 LED led(PIN_R, PIN_G, PIN_B);
-Si4703 radio(PIN_RST, PIN_SDA, PIN_SCL);
+Radio radio(PIN_RST, PIN_SDA, PIN_SCL);
 QuadEncoder knob(PIN_ENC1, PIN_ENC2);
 Button ledbtn(PIN_LEDBTN, INPUT_PULLUP);
 Button encbtn(PIN_ENCBTN, INPUT_PULLUP);
@@ -77,7 +74,7 @@ Button mscbtn(PIN_MSCBTN, INPUT_PULLUP);
 void setup() {
 
     Serial.begin(9600);
-    mqttSetup(onConnect, onDisconnect);
+    mqttSetup(DEVICE_TYPE_AUDIO, onConnect, onDisconnect);
 
     pinMode(PIN_POWER, OUTPUT);
     pinMode(PIN_VOLUP, OUTPUT);
@@ -90,8 +87,8 @@ void setup() {
     digitalWrite(PIN_POWER, HIGH);
 
     radio.powerOn();
-    radioSetVolume(DEFAULT_RADIO_VOLUME);
-    radioSetStation(DEFAULT_RADIO_STATION);
+    radio.setVolume(DEFAULT_RADIO_VOLUME);
+    radio.setStation(DEFAULT_RADIO_STATION);
 
     delay(500);
 
@@ -113,7 +110,7 @@ void loop() {
     mqttLoop();
     led.loop();
 
-    checkKnob(knob.state(),     COMPONENT_KNOB);
+    knobCheck(knob.state(), COMPONENT_KNOB);
     checkButton(ledbtn.state(), COMPONENT_LEDBTN);
     checkButton(encbtn.state(), COMPONENT_ENCBTN);
     checkButton(mscbtn.state(), COMPONENT_MSCBTN);
@@ -126,21 +123,17 @@ void loop() {
 
 void onConnect() {
     led.color("green");
-    IS_CONNECTED = true;
 }
 
 void onDisconnect() {
     led.color("red");
-    IS_CONNECTED = false;
 }
-
-
 
 // ******************************
 // Knob Handling
 // ******************************
 
-void checkKnob(char state, int comp) {
+void knobCheck(char state, int comp) {
 
     if (KNOB_ADJUSTS_VOLUME) {
 
@@ -157,14 +150,7 @@ void checkKnob(char state, int comp) {
 
     } else {
 
-        switch (state) {
-            case '>':
-                mqttPublish("action/enc","up");
-                break;
-            case '<':
-                mqttPublish("action/enc","down");
-                break;
-        }
+        defaultKnobCheck(state, comp);
 
     }
 
@@ -242,39 +228,25 @@ void checkButton(char state, int comp) {
 // Radio Commands
 // ******************************
 
-void radioSetVolume(int level) {
-    if (RADIO_VOLUME != level) {
-        radio.setVolume(level);
-        RADIO_VOLUME = level;
-    }
-}
-
-void radioSetStation(int station) {
-    if (RADIO_STATION != station) {
-        radio.setChannel(station);
-        RADIO_STATION = station;
-    }
-}
-
 void radioSkip() {
     switch (RADIO_STATION) {
         case 879:
-            radioSetStation(893);
+            radio.setStation(893);
             break;
         case 893:
-            radioSetStation(911);
+            radio.setStation(911);
             break;
         case 911:
-            radioSetStation(937);
+            radio.setStation(937);
             break;
         case 937:
-            radioSetStation(971);
+            radio.setStation(971);
             break;
         case 971:
-            radioSetStation(1013);
+            radio.setStation(1013);
             break;
         default:
-            radioSetStation(879);
+            radio.setStation(879);
             break;
     }
 }
@@ -289,7 +261,7 @@ void ampPowerOn() {
     ampSetVolume(AMP_VOLUME_DEFAULT);
     IS_AMP_POWERED = true;
     sendAmpStatus();
-    sendLEDStatus();
+    led.sendStatus();
 }
 
 void ampPowerOff() {
@@ -298,7 +270,7 @@ void ampPowerOff() {
     digitalWrite(PIN_STBY, LOW);
     IS_AMP_POWERED = false;
     sendAmpStatus();
-    sendLEDStatus();
+    led.sendStatus();
 }
 
 void ampPowerToggle() {
@@ -365,8 +337,8 @@ void sendAllStatus() {
     strcpy(knob,(KNOB_ADJUSTS_VOLUME) ? "true" : "false");
     mqttPublish("status/enc/adjusts-volume", knob);
 
-    sendLEDStatus();
-    sendRadioStatus();
+    led.sendStatus();
+    radio.sendStatus();
 
 }
 
@@ -386,34 +358,6 @@ void sendAmpVolume() {
     itoa(AMP_VOLUME, vol, 10);
     mqttPublish("status/volume/level", vol);
 }
-
-void sendRadioStatus() {
-
-    char vol[2] = "";
-    char chn[3] = "";
-
-    itoa(RADIO_VOLUME, vol, 10);
-    itoa(RADIO_STATION, chn, 10);
-
-    mqttPublish("status/radio/volume", vol);
-    mqttPublish("status/radio/station", chn);
-
-}
-
-void sendLEDStatus() {
-
-    char ledi[3] = "";
-    char leds[3] = "";
-
-    strcpy(leds, (led.getState() == 1) ? "on" : "off");
-    itoa(led.getIntensity(), ledi, 10);
-
-    mqttPublish("status/led/state", leds);
-    mqttPublish("status/led/intensity", ledi);
-    mqttPublish("status/led/color", led.getColor());
-
-}
-
 
 // ******************************
 // Handle Incoming Messages
@@ -436,22 +380,7 @@ void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, ch
     // topicParts[2] = ...
     // topicParts[3] = ...
 
-    // *********************
-    // DEVICE IDENTIFICATION
-    // *********************
 
-    if (equals(topic, "command/identify")) {
-        mqttPublish("action/identify", DEVICE_TYPE_AUDIO);
-    }
-
-    // *********************
-    // CUSTOM SETUP
-    // *********************
-
-    if (equals(topic, "command/configure")) {
-        mqttPublish("action/configure", "true");
-        return;
-    }
 
     if (equals(topic, "setup/default/radio/station")) {
         DEFAULT_RADIO_STATION = intmsg;
@@ -488,12 +417,12 @@ void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, ch
     }
 
     if (equals(topic, "command/status/led")) {
-        sendLEDStatus();
+        led.sendStatus();
         return;
     }
 
     if (equals(topic, "command/status/radio")) {
-        sendRadioStatus();
+        radio.sendStatus();
         return;
     }
 
@@ -572,7 +501,7 @@ void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, ch
     // *********************
 
     if (equals(topic, "command/radio/volume")) {
-        radioSetVolume(intmsg);
+        radio.setVolume(intmsg);
         return;
     }
 
@@ -583,10 +512,10 @@ void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, ch
         }
 
         if (equals(msg, "house")) {
-            radioSetStation(DEFAULT_RADIO_STATION);
+            radio.setStation(DEFAULT_RADIO_STATION);
             return;
         } else {
-            radioSetStation(intmsg);
+            radio.setStation(intmsg);
             return;
         }
 

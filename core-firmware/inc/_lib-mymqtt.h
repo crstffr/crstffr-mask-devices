@@ -1,10 +1,11 @@
-
-
 void noop();
 void mqttLoop();
 void mqttConnect();
 void mqttDisconnected();
+void defaultOnConnect();
+void defaultOnDisconnect();
 void mqttSubscribe(char* topic);
+void mqttAction(char* action, char* payload);
 void mqttPublish(char* topic, char* payload);
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 void mqttCustomMessageHandler(char* shortTopic, char** topicParts, int topicCount, char* msg);
@@ -23,30 +24,32 @@ char DEVICE_ID[25];
 bool DEBUG_LOG = false;
 bool BROKER_CONNECTED = false;
 bool SERVER_CONNECTED = false;
+bool IS_CONNECTED = false;
+char* DEVICE_TYPE = "";
 
 String MQTT_DEVICE_PREFIX;
 const int DEVICE_PREFIX_LENGTH = 30;
 char MQTT_DEVICE_PREFIX_CHAR[DEVICE_PREFIX_LENGTH];
 PubSubClient mqtt(MQTT_HOST, 1883, mqttCallback, tcp);
 
-void noop() {}
 
-void mqttSetup(callback onConnect, callback onDisconnect) {
-    MQTT_DEVICE_PREFIX = "dev/" + Spark.deviceID() + "/";
-    MQTT_DEVICE_PREFIX.toCharArray(MQTT_DEVICE_PREFIX_CHAR, DEVICE_PREFIX_LENGTH);
+void mqttSetup(char* deviceType, callback onConnect, callback onDisconnect) {
 
     String deviceID = Spark.deviceID();
+
+    DEVICE_TYPE = deviceType;
+    MQTT_DEVICE_PREFIX = "dev/" + deviceID + "/";
+    MQTT_DEVICE_PREFIX.toCharArray(MQTT_DEVICE_PREFIX_CHAR, DEVICE_PREFIX_LENGTH);
     deviceID.toCharArray(DEVICE_ID, 25);
 
     connectCallback = onConnect;
     disconnectCallback = onDisconnect;
-
-    connectTimer = timer.setInterval(1000, mqttConnect);
+    connectTimer = timer.setInterval(2000, mqttConnect);
 
     mqttConnect();
 }
 
-void mqttSetup() { mqttSetup(noop, noop); }
+void mqttSetup(char* deviceType) { mqttSetup(deviceType, noop, noop); }
 
 void mqttLoop() {
     mqtt.loop();
@@ -63,7 +66,7 @@ void mqttLoop() {
             // server, which should respond with an event
             // topic of "command/network/connect" = "SYNACK".
 
-            mqttPublish("action/network/connect", "SYN");
+            mqttAction("network/connect", "SYN");
 
             // Find the rest of the handshake process in
             // the mqttDefaultMessageHandler().
@@ -80,6 +83,7 @@ void mqttLoop() {
 }
 
 void mqttDisconnected() {
+    IS_CONNECTED = false;
     SERVER_CONNECTED = false;
     disconnectCallback();
 }
@@ -100,7 +104,7 @@ void mqttConnect() {
         }
     }
 
-    mqttPublish("action/network/connect", "SYN");
+    // mqttAction("network/connect", "SYN");
 }
 
 void mqttSubscribe(char* topic) {
@@ -125,6 +129,22 @@ void mqttPublish(char* topic, char* payload) {
     mqtt.publish(charTopic, payload);
 
 }
+
+void mqttAction(char* topic, char* payload) {
+    String fullTopic = "action/" + String(topic);
+    char charTopic[fullTopic.length() + 1];
+    fullTopic.toCharArray(charTopic, fullTopic.length() + 1);
+    mqttPublish(charTopic, payload);
+}
+
+void mqttStatus(char* topic, char* payload) {
+    String fullTopic = "status/" + String(topic);
+    char charTopic[fullTopic.length() + 1];
+    fullTopic.toCharArray(charTopic, fullTopic.length() + 1);
+    mqttPublish(charTopic, payload);
+}
+
+
 
 
 void mqttCallback(char* incomingTopic, byte* payload, unsigned int length) {
@@ -181,7 +201,7 @@ void mqttDefaultMessageHandler(char* fullTopic, char* shortTopic, char* msg) {
     // asking them to connect, then initiate a handshake.
 
     if (equals(fullTopic, "dev/all/network/connect")) {
-        mqttPublish("action/network/connect", "SYN");
+        mqttAction("network/connect", "SYN");
         return;
     }
 
@@ -201,14 +221,33 @@ void mqttDefaultMessageHandler(char* fullTopic, char* shortTopic, char* msg) {
         return;
     }
 
+    // *********************
+    // DEVICE IDENTIFICATION
+    // *********************
+
+    if (equals(shortTopic, "command/identify")) {
+        mqttAction("identify", DEVICE_TYPE);
+    }
+
+    // *********************
+    // CUSTOM SETUP
+    // *********************
+
+    if (equals(shortTopic, "command/configure")) {
+        mqttAction("configure", "true");
+        return;
+    }
+
+
     // This is the second part of the handshake handler.
     // When the server responds with a SYNACK, then the
     // device and the server are both alive.  Send a
     // final acknowledgement to the server via ACK.
 
     if (equals(shortTopic, "command/network/connect") && equals(msg, "SYNACK")) {
-        mqttPublish("action/network/connect", "ACK");
+        mqttAction("network/connect", "ACK");
         SERVER_CONNECTED = true;
+        IS_CONNECTED = true;
         connectCallback();
         return;
     }

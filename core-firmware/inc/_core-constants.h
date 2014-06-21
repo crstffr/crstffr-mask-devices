@@ -1,15 +1,10 @@
-#include "_utils.h"
-#include "_button.h"
-#include "_timer.h"
-#include "_led.h"
-#include "_mqtt.h"
 
 char MQTT_HOST[10] = "lilliput1";
 
-char DEVICE_TYPE_BASS[5]  = "bass";
+char DEVICE_TYPE_BASS[5] = "bass";
 char DEVICE_TYPE_AUDIO[6] = "audio";
 char DEVICE_TYPE_LIGHT[6] = "light";
-char DEVICE_TYPE_CONTROL[8] = "control";
+char DEVICE_TYPE_PANEL[6] = "panel";
 
 int DEFAULT_RADIO_STATION = 879;
 int DEFAULT_RADIO_VOLUME = 15;
@@ -22,5 +17,3 @@ int  AMP_VOLUME_DEFAULT = 20;
 int  AMP_VOLUME_HIGH = 45;
 int  AMP_VOLUME_MED = 35;
 int  AMP_VOLUME_LOW = 10;
-
-#include "_mymqtt.h" // Leave this down here.

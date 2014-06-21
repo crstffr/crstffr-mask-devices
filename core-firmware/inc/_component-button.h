@@ -1,5 +1,22 @@
-#include "application.h"
-#include "_button.h"
+#ifndef Button_h
+#define Button_h
+
+class Button
+{
+    public:
+        Button(int pin, PinMode mode);
+        char state();
+    private:
+        int _pin;
+        int _val;
+        bool _on;
+        bool _off;
+        bool _down;
+        long _hold;
+        bool _held;
+        unsigned long _now;
+        unsigned long _timer;
+};
 
 Button::Button(int pin, PinMode mode) {
     pinMode(pin, mode);
@@ -24,14 +41,6 @@ char Button::state() {
 
     _val = digitalRead(_pin);
 
-    /*
-    if (_pin <= 7) {
-        _val = digitalRead(_pin);
-    } else {
-        _val = analogRead(_pin);
-    }
-    */
-
     if (!_down && !_held && _val == _on) {
         _down = true;
         _timer = millis();
@@ -49,3 +58,5 @@ char Button::state() {
     }
     return out;
 }
+
+#endif
