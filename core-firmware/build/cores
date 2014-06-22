@@ -1,0 +1,9 @@
+(function(undefined) {
+
+    module.exports = {
+        1: '48ff6b065067555039091087',
+        2: '48ff6b065067555017201587', // dead
+        3: '48ff6e065067555039331387'
+    }
+
+}).call(this);
