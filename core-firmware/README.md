@@ -1,4 +1,4 @@
-# Spark Core Firmware
+# Spark Core Firmware [![Backlog](https://badge.waffle.io/spark/core-firmware.png?label=backlog&title=backlog)](https://waffle.io/spark/core-firmware)
 
 This is the main source code repository of the Spark Core firmware libraries.
 
@@ -31,10 +31,10 @@ In order to turn your source code into binaries, you will need a tool called `ma
 Download and install the latest version from: http://gnuwin32.sourceforge.net/packages/make.htm
 
 #### 3. Device Firmware Upgrade Utilities
-Install dfu-util. Mac users can install dfu-util with [Homebrew](http://brew.sh/) or [Macports](http://www.macports.org), Linux users may find it in their package manager, and everyone can get it from http://dfu-util.gnumonks.org/index.html
+Install dfu-util 0.7. Mac users can install dfu-util with [Homebrew](http://brew.sh/) or [Macports](http://www.macports.org), Linux users may find it in their package manager, and everyone can get it from http://dfu-util.gnumonks.org/index.html
 
 #### 4. Zatig
-In order for the Core to show up on the dfu list, you need to replace the USB driver with a utility called [Zadig](http://zadig.akeo.ie/). Here is a [tutorial](https://github.com/pbatard/libwdi/wiki/Zadig) on using it. This is only required for Windows users.
+In order for the Core to show up on the dfu list, you need to replace the USB driver with a utility called [Zadig](http://zadig.akeo.ie/). Here is a [tutorial](https://community.spark.io/t/tutorial-installing-dfu-driver-on-windows/3518) on using it. This is only required for Windows users.
 
 #### 5. Git
 
@@ -144,8 +144,11 @@ D:\Spark\core-firmware\build [master]> dfu-util -d 1d50:607f -a 0 -s 0x08005000:
    ```
 Upon successful transfer, the Core will automatically reset and start the running the program.
 
-Note: As of 12/4/13, you will likely see `Error during download get_status` as the last line from 
+##### Common Errors
+* As of 12/4/13, you will likely see `Error during download get_status` as the last line from 
 the `dfu-util` command. You can ignore this message for now.  We're not sure what this error is all about.
+
+* If you are having trouble with dfu-util, (like invalid dfuse address), try a newer version of dfu-util. v0.7 works well.
 
 **Still having troubles?** Checkout our [resources page](https://www.spark.io/resources), hit us up on IRC, etc.
 
