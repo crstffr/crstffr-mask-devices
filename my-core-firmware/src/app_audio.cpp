@@ -49,6 +49,13 @@ void setup() {
     pinMode(PIN_POWER, OUTPUT);
     digitalWrite(PIN_POWER, HIGH);
 
+    amp.setup();
+    amp.onPowerOn(onAmpPowerOn);
+    amp.onPowerOff(onAmpPowerOff);
+
+    knob.onUp(onKnobUp);
+    knob.onDown(onKnobDown);
+
     radio.powerOn();
     radio.setVolume(DEFAULT_RADIO_VOLUME);
     radio.setStation(DEFAULT_RADIO_STATION);
@@ -60,12 +67,6 @@ void setup() {
     ledbtn.onPress(onLedBtnPress);
     encbtn.onPress(onEncBtnPress);
     mscbtn.onPress(onMscBtnPress);
-
-    amp.onPowerOn(onAmpPowerOn);
-    amp.onPowerOff(onAmpPowerOff);
-
-    knob.onUp(onKnobUp);
-    knob.onDown(onKnobDown);
 
 }
 
@@ -99,17 +100,15 @@ void onDisconnect() {
 
 void onAmpPowerOn() {
     led.on();
-    //led.sendStatus();
 }
 
 void onAmpPowerOff() {
     led.off();
-    //led.sendStatus();
 }
 
 
 // ******************************
-// Default Buttons When Not Connected
+// Button Press Handlers
 // ******************************
 
 void onEncBtnPress() {
@@ -214,7 +213,7 @@ void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, ch
     // AMP POWER CONTROLS
     // *********************
 
-    if (equals(topic, "command/power/state")) {
+    if (equals(topic, "command/amp/power")) {
 
         if (equals(msg, "on")) {
             amp.powerOn();
@@ -239,45 +238,51 @@ void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, ch
     // AMP VOLUME CONTROLS
     // *********************
 
-    if (equals(topic, "command/volume/change")) {
+    if (equals(topic, "command/amp/volume")) {
 
         if (equals(msg, "up") ) {
             amp.volumeUp();
+            amp.sendVolume();
             return;
         }
         
         if (equals(msg, "down") ) {
             amp.volumeDown();
+            amp.sendVolume();
             return;
         }
 
         if (equals(msg, "reset") ) {
             amp.volumeReset();
+            amp.sendVolume();
             return;
         }
 
         if (equals(msg, "low") ) {
             amp.volumeSet(AMP_VOLUME_LOW);
+            amp.sendVolume();
             return;
         }
 
         if (equals(msg, "med")) {
             amp.volumeSet(AMP_VOLUME_MED);
+            amp.sendVolume();
             return;
         }
 
         if (equals(msg, "high") ) {
             amp.volumeSet(AMP_VOLUME_HIGH);
+            amp.sendVolume();
+            return;
+        }
+
+        if (intmsg >= 0 && intmsg <= 64) {
+            amp.volumeSet(intmsg);
             return;
         }
 
         return;
 
-    }
-
-    if (equals(topic, "command/volume/set")) {
-        amp.volumeSet(intmsg);
-        return;
     }
 
     // *********************

@@ -21,7 +21,7 @@ PIR::PIR(char* name, int pin) {
     _now = 0;
     _last = 0;
     _name = name;
-    _delay = 5000;
+    _delay = 10000;
 }
 
 bool PIR::state() {

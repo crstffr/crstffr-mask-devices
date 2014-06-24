@@ -1,15 +1,16 @@
 #ifndef Amp_h
 #define Amp_h
 
-int AMP_VOLUME_DEFAULT = 20;
-int AMP_VOLUME_HIGH = 45;
-int AMP_VOLUME_MED = 35;
-int AMP_VOLUME_LOW = 10;
+int AMP_VOLUME_LOW = 8;
+int AMP_VOLUME_MED = 32;
+int AMP_VOLUME_HIGH = 48;
+int AMP_VOLUME_DEFAULT = 16;
 
 class Amp
 {
     public:
         Amp(char* name, int stbyPin, int mutePin, int volUpPin, int volDnPin);
+        void setup();
 
         void powerOn();
         void powerOff();
@@ -58,17 +59,15 @@ Amp::Amp(char* name, int stbyPin, int mutePin, int volUpPin, int volDnPin) {
     pinMode(_volDnPin, OUTPUT);
     pinMode(_stbyPin,  OUTPUT);
 
-    digitalWrite(_volUpPin, LOW);
-    digitalWrite(_volDnPin, LOW);
-
-    delay(500);
-
-    digitalWrite(_volUpPin, HIGH);
-    digitalWrite(_volDnPin, HIGH);
-
 }
 
-
+void Amp::setup() {
+    digitalWrite(_volUpPin, LOW);
+    digitalWrite(_volDnPin, LOW);
+    delay(500);
+    digitalWrite(_volUpPin, HIGH);
+    digitalWrite(_volDnPin, HIGH);
+}
 
 void Amp::onPowerOn(callback fn) {
     _onPowerOn = fn;
