@@ -10,7 +10,7 @@ function puts(error, stdout, stderr) { console.log(stdout) }
 
 var coreNum = process.argv[2];
 var coreBin = process.argv[3];
-var binPath = './applications/' + coreBin + '/' + coreBin + '.bin';
+var binPath = './core-firmware/build/applications/' + coreBin + '/' + coreBin + '.bin';
 var coreId = cores[coreNum];
 
 if (!coreNum && !coreBin) {

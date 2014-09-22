@@ -9,8 +9,8 @@ void coreSetup() {
     RGB.control(true);
     RGB.brightness(64);
     RGB.control(false);
-
     Serial.begin(9600);
+
 }
 
 

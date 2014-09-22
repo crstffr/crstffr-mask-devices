@@ -56,7 +56,7 @@ void setup() {
     knob.onUp(onKnobUp);
     knob.onDown(onKnobDown);
 
-    // radio.powerOn();
+    radio.powerOn();
     // radio.setVolume(DEFAULT_RADIO_VOLUME);
     // radio.setStation(DEFAULT_RADIO_STATION);
 
