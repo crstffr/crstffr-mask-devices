@@ -1,4 +1,4 @@
-# Spark Core Firmware [![Backlog](https://badge.waffle.io/spark/core-firmware.png?label=backlog&title=backlog)](https://waffle.io/spark/core-firmware)
+# Spark Core Firmware [![Backlog](https://badge.waffle.io/spark/core-firmware.png?label=backlog&title=backlog)](https://waffle.io/spark/core-firmware) [![Build Status](https://travis-ci.org/spark/core-firmware.svg)](https://travis-ci.org/spark/core-firmware)
 
 This is the main source code repository of the Spark Core firmware libraries.
 
@@ -65,7 +65,7 @@ Open up a terminal window, navigate to your destination directory and type the f
 * `git clone https://github.com/spark/core-common-lib.git`  
 * `git clone https://github.com/spark/core-communication-lib.git`  
 
-*Meathod 2: Download the zipped files directly from the Spark's GitHub website*
+*Method 2: Download the zipped files directly from the Spark's GitHub website*
 
 * [core-firmware](https://github.com/spark/core-firmware/archive/master.zip)
 * [core-common-lib](https://github.com/spark/core-common-lib/archive/master.zip)
