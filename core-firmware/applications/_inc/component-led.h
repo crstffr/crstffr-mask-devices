@@ -201,9 +201,9 @@ void LED::sendStatus() {
         strcpy(leds, (_state == 1) ? "on" : "off");
         itoa(_intensity, ledi, 10);
 
-        mqttPublish("status/led/state", leds);
-        mqttPublish("status/led/intensity", ledi);
-        mqttPublish("status/led/color", _color);
+        mqttStatus("led/state", leds);
+        mqttStatus("led/intensity", ledi);
+        mqttStatus("led/color", _color);
 
     }
 

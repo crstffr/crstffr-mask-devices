@@ -6,7 +6,9 @@ class Button
     public:
         Button(char* name, int pin, PinMode mode);
         void onPress(callback fn);
+        void onDown(callback fn);
         void onHold(callback fn);
+        void onUp(callback fn);
         char state();
         void loop();
     private:
@@ -21,7 +23,9 @@ class Button
         unsigned long _now;
         unsigned long _timer;
         callback _onPress;
+        callback _onDown;
         callback _onHold;
+        callback _onUp;
 };
 
 Button::Button(char* name, int pin, PinMode mode) {
@@ -35,7 +39,9 @@ Button::Button(char* name, int pin, PinMode mode) {
     _down = false;
 
     _onPress = noop;
+    _onDown = noop;
     _onHold = noop;
+    _onUp = noop;
 
     if (mode == INPUT_PULLUP) {
         _on = LOW;
@@ -52,8 +58,16 @@ void Button::onPress(callback fn) {
     _onPress = fn;
 }
 
+void Button::onDown(callback fn) {
+    _onDown = fn;
+}
+
 void Button::onHold(callback fn) {
     _onHold = fn;
+}
+
+void Button::onUp(callback fn) {
+    _onUp = fn;
 }
 
 char Button::state() {
@@ -63,16 +77,21 @@ char Button::state() {
     _val = digitalRead(_pin);
 
     if (!_down && !_held && _val == _on) {
+        out = 'D';
         _down = true;
         _timer = millis();
     } else if (_down && !_held && _val == _on) {
         if (_now > _timer + _hold) {
             out = 'H';
             _held = true;
+        } else {
+            out = 'D';
         }
     } else if (_val == _off) {
         if (_down && !_held) {
             out = 'P';
+        } else if (_down) {
+            out = 'U';
         }
         _down = false;
         _held = false;
@@ -84,6 +103,14 @@ char Button::state() {
 void Button::loop() {
 
     switch (this->state()) {
+        case 'D':
+            _onDown();
+            break;
+
+        case 'U':
+            _onUp();
+            break;
+
         case 'P':
             _onPress();
             if (IS_CONNECTED) {

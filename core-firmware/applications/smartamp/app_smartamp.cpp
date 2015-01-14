@@ -1,17 +1,13 @@
 #include "application.h"
 #include "../_inc/core-common.h"
-#include "../_inc/component-amp.h"
 #include "../_inc/component-led.h"
-#include "../_inc/component-radio.h"
 #include "../_inc/component-button.h"
-#include "../_inc/component-quadencoder.h"
+#include "../_inc/component-motorized-pot.h"
 
 // ******************************
 // Definitions
 // ******************************
 
-int PIN_POWER = D5;
-bool KNOB_ADJUSTS_VOLUME = true;
 
 // ******************************
 // Function Prototype Definitions
@@ -19,54 +15,42 @@ bool KNOB_ADJUSTS_VOLUME = true;
 
 void onConnect();
 void onDisconnect();
-void onAmpPowerOn();
-void onAmpPowerOff();
-void onKnobUp();
-void onKnobDown();
-void onLedBtnPress();
-void onEncBtnPress();
-void onMscBtnPress();
-void checkKnob();
+void onUpBtnPress();
+void onDnBtnPress();
+void potChanged();
+void ledReset();
 
 // ******************************
 // Class instantiations
 // ******************************
 
-LED led(A0, A1, A2);
-Amp amp("amp", D3, 0, D6, D7);
-Radio radio("radio", D2, D1, D0);
-QuadEncoder knob("knob", A4, A5);
-Button ledbtn("led-btn", A3, INPUT_PULLUP);
-Button encbtn("knob-btn", A6, INPUT_PULLUP);
-Button mscbtn("misc-btn", A7, INPUT_PULLUP);
+LED led(A4, A5, A6);
+
+Button upbtn("up-btn", D2, INPUT_PULLUP);
+Button dnbtn("dn-btn", D4, INPUT_PULLUP);
+MotorizedPot motorpot("motorpot", A1, D1, D0);
 
 
 void setup() {
 
     coreSetup();
-    mqttSetup(DEVICE_TYPE_AUDIO, onConnect, onDisconnect);
+    mqttSetup(DEVICE_TYPE_SMARTAMP, onConnect, onDisconnect);
 
-    pinMode(PIN_POWER, OUTPUT);
-    digitalWrite(PIN_POWER, HIGH);
-
-    amp.setup();
-    amp.onPowerOn(onAmpPowerOn);
-    amp.onPowerOff(onAmpPowerOff);
-
-    knob.onUp(onKnobUp);
-    knob.onDown(onKnobDown);
-
-    radio.powerOn();
-    radio.setVolume(DEFAULT_RADIO_VOLUME);
-    radio.setStation(DEFAULT_RADIO_STATION);
-
+    led.on();
     led.setMaxIntensity(MAX_LED_INTENSITY);
     led.intensity(DEFAULT_LED_INTENSITY);
-    led.color("red");
 
-    ledbtn.onPress(onLedBtnPress);
-    encbtn.onPress(onEncBtnPress);
-    mscbtn.onPress(onMscBtnPress);
+    upbtn.onUp(ledReset);
+    upbtn.onDown(onUpBtnPress);
+    upbtn.onPress(ledReset);
+
+    dnbtn.onUp(ledReset);
+    dnbtn.onDown(onDnBtnPress);
+    dnbtn.onPress(ledReset);
+
+    motorpot.onChange(potChanged);
+
+    ledReset();
 
 }
 
@@ -79,10 +63,9 @@ void loop() {
     mqttLoop();
     led.loop();
 
-    knob.loop();
-    ledbtn.loop();
-    encbtn.loop();
-    mscbtn.loop();
+    upbtn.loop();
+    dnbtn.loop();
+    motorpot.loop();
 
 }
 
@@ -91,19 +74,19 @@ void loop() {
 // ******************************
 
 void onConnect() {
-    led.color("green");
+    //led.color("green");
 }
 
 void onDisconnect() {
-    led.color("red");
+    //led.color("red");
 }
 
 void onAmpPowerOn() {
-    led.on();
+    //led.on();
 }
 
 void onAmpPowerOff() {
-    led.off();
+    //led.off();
 }
 
 
@@ -111,35 +94,26 @@ void onAmpPowerOff() {
 // Button Press Handlers
 // ******************************
 
-void onEncBtnPress() {
-    amp.powerToggle();
+void potChanged() {
+    //motorpot.sendStatus();
 }
 
-void onMscBtnPress() {
-    if (!IS_CONNECTED) {
-        radio.skipStation();
-    }
+void ledReset() {
+    led.color("blue");
+    digitalWrite(D1, LOW);
 }
 
-void onLedBtnPress() {
-    if (!IS_CONNECTED) {
-        mqttConnect();
-    }
+void onUpBtnPress() {
+
+    led.color("green");
+    digitalWrite(D0, HIGH);
+    digitalWrite(D1, HIGH);
 }
 
-
-// ******************************
-// Knob Handling
-// ******************************
-
-void onKnobUp() {
-    amp.volumeUp();
-    amp.sendVolume();
-}
-
-void onKnobDown() {
-    amp.volumeDown();
-    amp.sendVolume();
+void onDnBtnPress() {
+    led.color("red");
+    digitalWrite(D0, LOW);
+    digitalWrite(D1, HIGH);
 }
 
 // ******************************
@@ -163,16 +137,6 @@ void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, ch
     // topicParts[2] = ...
     // topicParts[3] = ...
 
-    if (equals(topic, "setup/default/radio/station")) {
-        DEFAULT_RADIO_STATION = intmsg;
-        return;
-    }
-
-    if (equals(topic, "setup/knob/adjusts/volume")) {
-        KNOB_ADJUSTS_VOLUME = boolmsg;
-        return;
-    }
-
     if (equals(topic, "setup/led/max/intensity")) {
         led.setMaxIntensity(intmsg);
         return;
@@ -183,29 +147,13 @@ void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, ch
     // *********************
 
     if (equals(topic, "command/status/all")) {
-        amp.sendStatus();
         led.sendStatus();
-        radio.sendStatus();
-        return;
-    }
-
-    if (equals(topic, "command/status/amp")) {
-        amp.sendStatus();
-        return;
-    }
-
-    if (equals(topic, "command/status/vol")) {
-        amp.sendVolume();
+        motorpot.sendStatus();
         return;
     }
 
     if (equals(topic, "command/status/led")) {
         led.sendStatus();
-        return;
-    }
-
-    if (equals(topic, "command/status/radio")) {
-        radio.sendStatus();
         return;
     }
 
@@ -216,17 +164,17 @@ void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, ch
     if (equals(topic, "command/amp/power")) {
 
         if (equals(msg, "on")) {
-            amp.powerOn();
+            // amp.powerOn();
             return;
         }
 
         if (equals(msg, "off")) {
-            amp.powerOff();
+            // amp.powerOff();
             return;
         }
 
         if (equals(msg, "toggle")) {
-            amp.powerToggle();
+            // amp.powerToggle();
             return;
         }
 
@@ -241,72 +189,47 @@ void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, ch
     if (equals(topic, "command/amp/volume")) {
 
         if (equals(msg, "up") ) {
-            amp.volumeUp();
-            amp.sendVolume();
+            //amp.volumeUp();
+            //amp.sendVolume();
             return;
         }
-        
+
         if (equals(msg, "down") ) {
-            amp.volumeDown();
-            amp.sendVolume();
+            //amp.volumeDown();
+            //amp.sendVolume();
             return;
         }
 
         if (equals(msg, "reset") ) {
-            amp.volumeReset();
-            amp.sendVolume();
+            //amp.volumeReset();
+            //amp.sendVolume();
             return;
         }
 
         if (equals(msg, "low") ) {
-            amp.volumeSet(AMP_VOLUME_LOW);
-            amp.sendVolume();
+            //amp.volumeSet(AMP_VOLUME_LOW);
+            //amp.sendVolume();
             return;
         }
 
         if (equals(msg, "med")) {
-            amp.volumeSet(AMP_VOLUME_MED);
-            amp.sendVolume();
+            //amp.volumeSet(AMP_VOLUME_MED);
+            //amp.sendVolume();
             return;
         }
 
         if (equals(msg, "high") ) {
-            amp.volumeSet(AMP_VOLUME_HIGH);
-            amp.sendVolume();
+            //amp.volumeSet(AMP_VOLUME_HIGH);
+            //amp.sendVolume();
             return;
         }
 
         if (intmsg >= 0 && intmsg <= 64) {
-            amp.volumeSet(intmsg);
+            //amp.volumeSet(intmsg);
             return;
         }
 
         return;
-
-    }
-
-    // *********************
-    // RADIO CONTROLS
-    // *********************
-
-    if (equals(topic, "command/radio/volume")) {
-        radio.setVolume(intmsg);
-        return;
-    }
-
-    if (equals(topic, "command/radio/station")) {
-        if (equals(msg, "skip") ) {
-            radio.skipStation();
-            return;
-        }
-
-        if (equals(msg, "house")) {
-            radio.setStation(DEFAULT_RADIO_STATION);
-            return;
-        } else {
-            radio.setStation(intmsg);
-            return;
-        }
 
     }
 
