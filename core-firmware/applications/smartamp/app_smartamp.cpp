@@ -138,38 +138,10 @@ void mqttCustomMessageHandler(MqttMessage msg) {
 
     led.mqtt(msg);
     rxrelay.mqtt(msg);
+    motorpot.mqtt(msg);
 
 
-
-    /*int intmsg = atoi(msg);
-    bool boolmsg = equals(msg, "true");
-
-    char topicsize[2];
-    itoa(topicCount, topicsize, 10);
-    mqttLog("topic/count", topicsize);
-
-
-
-    // ******************************
-    // Incoming Data
-    // ******************************
-
-    // topicParts[1] = setup || control
-    // topicParts[2] = ...
-    // topicParts[3] = ...
-
-
-    // *********************
-    // REQUESTS FOR STATUS
-    // *********************
-
-    if (equals(topic, "command/status/all")) {
-
-        motorpot.sendStatus();
-        return;
-    }
-
-
+    /*
 
     // *********************
     // AMP POWER CONTROLS

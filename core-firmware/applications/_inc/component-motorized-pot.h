@@ -5,6 +5,7 @@ class MotorizedPot
 {
     public:
         MotorizedPot(char* name, int feedbackPin, int phasePin, int enablePin);
+        void mqtt(MqttMessage msg);
         void loop();
         void setup();
         int  getValue();
@@ -70,10 +71,25 @@ int MotorizedPot::getValue() {
 
 void MotorizedPot::sendStatus() {
     if (IS_CONNECTED) {
-        char value[5] = "";
-        itoa(_currentValue, value, 10);
-        mqttStatus(_name, "value", value);
+        int val = analogRead(_feedbackPin);
+        char str[5] = "";
+        itoa(val, str, 10);
+        mqttStatus(_name, "value", str);
     }
+}
+
+
+void MotorizedPot::mqtt(MqttMessage msg) {
+
+    if (!msg.isForMe(_name)) { return; }
+
+    mqttLog("MOTORPOT/forme", msg.topic());
+
+    if (msg.isStatusRequest()) {
+        sendStatus();
+        return;
+    }
+
 }
 
 #endif

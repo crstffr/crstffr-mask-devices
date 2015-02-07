@@ -190,7 +190,6 @@ void mqttCallback(char* incomingTopic, byte* payload, unsigned int length) {
     MqttMessage mqttMsg(fullTopic, shortTopic, topicParts, topicCount, msg);
 
     mqttDefaultMessageHandler(mqttMsg);
-
     mqttCustomMessageHandler(mqttMsg);
 
 }
