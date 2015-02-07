@@ -86,7 +86,7 @@ void Amp::sendState() {
     if (IS_CONNECTED) {
         char state[3] = "";
         strcpy(state, (_state) ? "on" : "off");
-        mqttStatus("amp/power", state);
+        mqttStatus(_name, "power", state);
     }
 }
 
@@ -94,7 +94,7 @@ void Amp::sendVolume() {
     if (IS_CONNECTED) {
         char level[3] = "";
         itoa(_volume, level, 10);
-        mqttStatus("amp/volume", level);
+        mqttStatus(_name, "volume", level);
     }
 }
 

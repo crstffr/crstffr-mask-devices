@@ -79,8 +79,8 @@ void Radio::sendStatus() {
         itoa(_volume, vol, 10);
         itoa(_station, chn, 10);
 
-        mqttStatus("radio/volume", vol);
-        mqttStatus("radio/station", chn);
+        mqttStatus(_name, "volume", vol);
+        mqttStatus(_name, "station", chn);
 
     }
 

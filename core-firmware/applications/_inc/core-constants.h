@@ -1,4 +1,5 @@
 
+const char SLASH[] = "/";
 char MQTT_HOST[10] = "lilliput1";
 
 char DEVICE_TYPE_AUDIO[6] = "audio";

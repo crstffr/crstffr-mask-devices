@@ -1,13 +1,16 @@
 #include "application.h"
 #include "../_inc/core-common.h"
 #include "../_inc/component-led.h"
+#include "../_inc/component-relay.h"
 #include "../_inc/component-button.h"
 #include "../_inc/component-motorized-pot.h"
+//#include "../_inc/lib-ds1802.h"
 
 // ******************************
 // Definitions
 // ******************************
 
+int volLevel = 0;
 
 // ******************************
 // Function Prototype Definitions
@@ -19,17 +22,23 @@ void onUpBtnPress();
 void onDnBtnPress();
 void potChanged();
 void ledReset();
+void setVolume(int val);
+void sendVolume();
 
 // ******************************
 // Class instantiations
 // ******************************
 
-LED led(A4, A5, A6);
+LED led("led", A1, A6, A7);
 
 Button upbtn("up-btn", D2, INPUT_PULLUP);
 Button dnbtn("dn-btn", D4, INPUT_PULLUP);
-MotorizedPot motorpot("motorpot", A1, D1, D0);
 
+// DS1802 volume(A2, D5);
+
+MotorizedPot motorpot("motorpot", A2, D1, D0);
+
+Relay rxRelay("rxrelay", D7);
 
 void setup() {
 
@@ -48,9 +57,9 @@ void setup() {
     dnbtn.onDown(onDnBtnPress);
     dnbtn.onPress(ledReset);
 
-    motorpot.onChange(potChanged);
-
     ledReset();
+
+    rxRelay.open();
 
 }
 
@@ -65,7 +74,6 @@ void loop() {
 
     upbtn.loop();
     dnbtn.loop();
-    motorpot.loop();
 
 }
 
@@ -74,11 +82,11 @@ void loop() {
 // ******************************
 
 void onConnect() {
-    //led.color("green");
+    led.color("blue");
 }
 
 void onDisconnect() {
-    //led.color("red");
+    led.color("red");
 }
 
 void onAmpPowerOn() {
@@ -94,40 +102,55 @@ void onAmpPowerOff() {
 // Button Press Handlers
 // ******************************
 
-void potChanged() {
-    //motorpot.sendStatus();
-}
-
 void ledReset() {
     led.color("blue");
     digitalWrite(D1, LOW);
+    motorpot.sendStatus();
 }
 
 void onUpBtnPress() {
 
     led.color("green");
+
+    //volLevel++;
+    //setVolume(volLevel);
+    //delay(100);
+
     digitalWrite(D0, HIGH);
     digitalWrite(D1, HIGH);
 }
 
 void onDnBtnPress() {
     led.color("red");
+
+    //volLevel--;
+    //setVolume(volLevel);
+    //delay(100);
+
     digitalWrite(D0, LOW);
     digitalWrite(D1, HIGH);
 }
+
 
 // ******************************
 // Handle Incoming Messages
 // ******************************
 
-void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, char* msg) {
+void mqttCustomMessageHandler(MqttMessage msg) {
 
-    int intmsg = atoi(msg);
+
+    led.mqtt(msg);
+
+
+
+    /*int intmsg = atoi(msg);
     bool boolmsg = equals(msg, "true");
 
     char topicsize[2];
     itoa(topicCount, topicsize, 10);
     mqttLog("topic/count", topicsize);
+
+
 
     // ******************************
     // Incoming Data
@@ -137,25 +160,18 @@ void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, ch
     // topicParts[2] = ...
     // topicParts[3] = ...
 
-    if (equals(topic, "setup/led/max/intensity")) {
-        led.setMaxIntensity(intmsg);
-        return;
-    }
 
     // *********************
     // REQUESTS FOR STATUS
     // *********************
 
     if (equals(topic, "command/status/all")) {
-        led.sendStatus();
+
         motorpot.sendStatus();
         return;
     }
 
-    if (equals(topic, "command/status/led")) {
-        led.sendStatus();
-        return;
-    }
+
 
     // *********************
     // AMP POWER CONTROLS
@@ -233,32 +249,8 @@ void mqttCustomMessageHandler(char* topic, char** topicParts, int topicCount, ch
 
     }
 
-    // *********************
-    // RGB LED CONTROLS
-    // *********************
+    */
 
-    if (equals(topic, "command/led/state")) {
-        if (equals(msg, "on")) {
-            led.on();
-        } else if (equals(msg, "off")) {
-            led.off();
-        }
-        return;
-    }
 
-    if (equals(topic, "command/led/dim")) {
-        led.dim();
-        return;
-    }
-
-    if (equals(topic, "command/led/color")) {
-        led.color(msg);
-        return;
-    }
-
-    if (equals(topic, "command/led/intensity")) {
-        led.intensity(intmsg);
-        return;
-    }
 
 }

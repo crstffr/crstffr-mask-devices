@@ -4,7 +4,8 @@
 class LED
 {
     public:
-        LED(int pinR, int pinG, int pinB);
+        LED(char* name, int pinR, int pinG, int pinB);
+        void mqtt(MqttMessage msg);
         void on();
         void off();
         void loop();
@@ -23,6 +24,9 @@ class LED
         int getIntensity();
         char* getColor();
         void sendStatus();
+        void sendState();
+        void sendColor();
+        void sendIntensity();
 
     private:
         int _pinR;
@@ -32,6 +36,7 @@ class LED
         int _g;
         int _b;
         int _state;
+        char* _name;
         int _blinkState;
         int _blinkTimer;
         char* _color;
@@ -44,7 +49,7 @@ class LED
 };
 
 
-LED::LED(int pinR, int pinG, int pinB) {
+LED::LED(char* name, int pinR, int pinG, int pinB) {
     _pinR = pinR;
     _pinG = pinG;
     _pinB = pinB;
@@ -52,6 +57,7 @@ LED::LED(int pinR, int pinG, int pinB) {
     _g = 0;
     _b = 0;
     _state = 0;
+    _name = name;
     _blinkGap = 350;
     _blinkState = 0;
     _intensity = 0;
@@ -111,7 +117,10 @@ void LED::setMaxIntensity(int value) {
 }
 
 void LED::intensity(int value) {
-    _intensity = value;
+    if (value != _intensity) {
+        _intensity = value;
+        sendIntensity();
+    }
     if (_state == 1) {
         int r = int((_r / 100) * value);
         int g = int((_g / 100) * value);
@@ -153,8 +162,6 @@ int LED::getState() {
 
 void LED::color(char* color) {
 
-    _color = color;
-
     if (strcmp(color, "white") == 0) {
         rgb(255, 255, 255);
     }
@@ -187,24 +194,82 @@ void LED::color(char* color) {
         rgb(255, 165, 0);
     }
 
+    if (color != _color) {
+        _color = color;
+        sendColor();
+    }
+
     change();
 
 }
 
 void LED::sendStatus() {
+    sendState();
+    sendColor();
+    sendIntensity();
+}
 
+void LED::sendColor() {
     if (IS_CONNECTED) {
+        mqttStatus(_name, "color", _color);
+    }
+}
 
-        char ledi[3] = "";
+void LED::sendState() {
+    if (IS_CONNECTED) {
         char leds[3] = "";
-
         strcpy(leds, (_state == 1) ? "on" : "off");
+        mqttStatus(_name, "state", leds);
+    }
+}
+
+void LED::sendIntensity() {
+    if (IS_CONNECTED) {
+        char ledi[3] = "";
         itoa(_intensity, ledi, 10);
+        mqttStatus(_name, "intensity", ledi);
+    }
+}
 
-        mqttStatus("led/state", leds);
-        mqttStatus("led/intensity", ledi);
-        mqttStatus("led/color", _color);
 
+void LED::mqtt(MqttMessage msg) {
+
+    if (!msg.isForMe(_name)) { return; }
+
+    mqttLog("LED/forme", msg.topic());
+
+    if (msg.isStatusRequest()) {
+        sendStatus();
+        return;
+    }
+
+    if (msg.isSetup("maxintensity")) {
+        setMaxIntensity(msg.intVal());
+        return;
+    }
+
+    if (msg.isCommand("state")) {
+        if (msg.is("on")) {
+            on();
+        } else if (msg.is("off")) {
+            off();
+        }
+        return;
+    }
+
+    if (msg.isCommand("dim")) {
+        dim();
+        return;
+    }
+
+    if (msg.isCommand("color")) {
+        color(msg.charVal());
+        return;
+    }
+
+    if (msg.isCommand("intensity")) {
+        intensity(msg.intVal());
+        return;
     }
 
 }

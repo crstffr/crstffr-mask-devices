@@ -72,7 +72,7 @@ void MotorizedPot::sendStatus() {
     if (IS_CONNECTED) {
         char value[5] = "";
         itoa(_currentValue, value, 10);
-        mqttStatus("motorpot/value", value);
+        mqttStatus(_name, "value", value);
     }
 }
 
