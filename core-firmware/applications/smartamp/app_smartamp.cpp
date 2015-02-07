@@ -34,11 +34,9 @@ LED led("led", A1, A6, A7);
 Button upbtn("up-btn", D2, INPUT_PULLUP);
 Button dnbtn("dn-btn", D4, INPUT_PULLUP);
 
-// DS1802 volume(A2, D5);
-
 MotorizedPot motorpot("motorpot", A2, D1, D0);
 
-Relay rxRelay("rxrelay", D7);
+Relay rxrelay("rxrelay", D7);
 
 void setup() {
 
@@ -59,7 +57,7 @@ void setup() {
 
     ledReset();
 
-    rxRelay.open();
+    rxrelay.open();
 
 }
 
@@ -138,8 +136,8 @@ void onDnBtnPress() {
 
 void mqttCustomMessageHandler(MqttMessage msg) {
 
-
     led.mqtt(msg);
+    rxrelay.mqtt(msg);
 
 
 

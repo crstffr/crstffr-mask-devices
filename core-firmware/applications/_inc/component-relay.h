@@ -30,18 +30,20 @@ bool Relay::state() {
 
 void Relay::open() {
     digitalWrite(_pin, HIGH);
+    _state = 1;
     sendStatus();
 }
 
 void Relay::close() {
     digitalWrite(_pin, LOW);
+    _state = 0;
     sendStatus();
 }
 
 void Relay::sendStatus() {
     if (IS_CONNECTED) {
         char state[3] = "";
-        strcpy(state, (_state) ? "on" : "off");
+        strcpy(state, (_state) ? "open" : "close");
         mqttStatus(_name, "state", state);
     }
 }
