@@ -10,6 +10,9 @@ class MotorizedPot
         void setup();
         int  getValue();
         void sendStatus();
+        void moveUp();
+        void moveDown();
+        void stop();
         void gotoValue(int value);
         void onChange(callback fn);
 
@@ -63,6 +66,20 @@ void MotorizedPot::onChange(callback fn) {
 
 void MotorizedPot::gotoValue(int value) {
 
+}
+
+void MotorizedPot::moveUp() {
+    digitalWrite(_enablePin, HIGH);
+    digitalWrite(_phasePin, HIGH);
+}
+
+void MotorizedPot::moveDown() {
+    digitalWrite(_enablePin, HIGH);
+    digitalWrite(_phasePin, LOW);
+}
+
+void MotorizedPot::stop() {
+    digitalWrite(_enablePin, LOW);
 }
 
 int MotorizedPot::getValue() {

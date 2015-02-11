@@ -4,13 +4,14 @@
 #include "../_inc/component-relay.h"
 #include "../_inc/component-button.h"
 #include "../_inc/component-motorized-pot.h"
-//#include "../_inc/lib-ds1802.h"
+#include "../_inc/lib-mcp4725.h"
 
 // ******************************
 // Definitions
 // ******************************
 
 int volLevel = 0;
+int dacValue = 0;
 
 // ******************************
 // Function Prototype Definitions
@@ -25,18 +26,24 @@ void ledReset();
 void setVolume(int val);
 void sendVolume();
 
+void measureDAC();
+void stopMeasuringDAC();
+void startMeasuringDAC();
+
+
 // ******************************
 // Class instantiations
 // ******************************
 
-LED led("led", A1, A6, A7);
-
 Button upbtn("up-btn", D2, INPUT_PULLUP);
 Button dnbtn("dn-btn", D4, INPUT_PULLUP);
-
-MotorizedPot motorpot("motorpot", A2, D1, D0);
-
+MotorizedPot motorpot("motorpot", A2, D5, D6);
 Relay rxrelay("rxrelay", D7);
+Adafruit_MCP4725 dac(0x62);
+LED led("led", A5, A6, A7);
+
+SimpleTimer dacTimer;
+int dacTimerNum;
 
 void setup() {
 
@@ -59,6 +66,11 @@ void setup() {
 
     rxrelay.open();
 
+    dac.begin();
+    dac.setValue(0, true);
+
+    dacTimerNum = dacTimer.setInterval(100, measureDAC);
+
 }
 
 // ******************************
@@ -69,10 +81,41 @@ void loop() {
 
     mqttLoop();
     led.loop();
-
     upbtn.loop();
     dnbtn.loop();
 
+    dacTimer.run();
+
+}
+
+void measureDAC() {
+
+    int feedbackPin = A1;
+
+    dac.setValue(dacValue);
+
+    int adcValue = analogRead(feedbackPin);
+
+    String s = String(dacValue) + ":" + String(adcValue);
+    char c[s.length() + 1];
+    s.toCharArray(c, s.length() + 1);
+
+    mqttStatus("dac", "value", c);
+
+    dacValue = dacValue + 10;
+
+    if (dacValue > 4095) {
+        stopMeasuringDAC();
+    }
+
+}
+
+void startMeasuringDAC() {
+    dacTimer.enable(dacTimerNum);
+}
+
+void stopMeasuringDAC() {
+    dacTimer.disable(dacTimerNum);
 }
 
 // ******************************
@@ -102,31 +145,26 @@ void onAmpPowerOff() {
 
 void ledReset() {
     led.color("blue");
-    digitalWrite(D1, LOW);
+    motorpot.stop();
     motorpot.sendStatus();
 }
 
 void onUpBtnPress() {
 
+    startMeasuringDAC();
+
     led.color("green");
+    motorpot.moveUp();
 
-    //volLevel++;
-    //setVolume(volLevel);
-    //delay(100);
-
-    digitalWrite(D0, HIGH);
-    digitalWrite(D1, HIGH);
 }
 
 void onDnBtnPress() {
+
+    stopMeasuringDAC();
+
     led.color("red");
+    motorpot.moveDown();
 
-    //volLevel--;
-    //setVolume(volLevel);
-    //delay(100);
-
-    digitalWrite(D0, LOW);
-    digitalWrite(D1, HIGH);
 }
 
 
@@ -139,88 +177,5 @@ void mqttCustomMessageHandler(MqttMessage msg) {
     led.mqtt(msg);
     rxrelay.mqtt(msg);
     motorpot.mqtt(msg);
-
-
-    /*
-
-    // *********************
-    // AMP POWER CONTROLS
-    // *********************
-
-    if (equals(topic, "command/amp/power")) {
-
-        if (equals(msg, "on")) {
-            // amp.powerOn();
-            return;
-        }
-
-        if (equals(msg, "off")) {
-            // amp.powerOff();
-            return;
-        }
-
-        if (equals(msg, "toggle")) {
-            // amp.powerToggle();
-            return;
-        }
-
-        return;
-
-    }
-
-    // *********************
-    // AMP VOLUME CONTROLS
-    // *********************
-
-    if (equals(topic, "command/amp/volume")) {
-
-        if (equals(msg, "up") ) {
-            //amp.volumeUp();
-            //amp.sendVolume();
-            return;
-        }
-
-        if (equals(msg, "down") ) {
-            //amp.volumeDown();
-            //amp.sendVolume();
-            return;
-        }
-
-        if (equals(msg, "reset") ) {
-            //amp.volumeReset();
-            //amp.sendVolume();
-            return;
-        }
-
-        if (equals(msg, "low") ) {
-            //amp.volumeSet(AMP_VOLUME_LOW);
-            //amp.sendVolume();
-            return;
-        }
-
-        if (equals(msg, "med")) {
-            //amp.volumeSet(AMP_VOLUME_MED);
-            //amp.sendVolume();
-            return;
-        }
-
-        if (equals(msg, "high") ) {
-            //amp.volumeSet(AMP_VOLUME_HIGH);
-            //amp.sendVolume();
-            return;
-        }
-
-        if (intmsg >= 0 && intmsg <= 64) {
-            //amp.volumeSet(intmsg);
-            return;
-        }
-
-        return;
-
-    }
-
-    */
-
-
 
 }

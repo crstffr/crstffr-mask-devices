@@ -9,3 +9,11 @@ bool equals(char* one, char* two) {
     return (strcmp(one, two) == 0);
 }
 
+// Convert a String to a char*
+
+char* stoc(String s) {
+    char c[s.length() + 1];
+    s.toCharArray(c, s.length() + 1);
+    return c;
+}
+
