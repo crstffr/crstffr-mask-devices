@@ -26,9 +26,6 @@ void ledReset();
 void setVolume(int val);
 void sendVolume();
 
-void measureDAC();
-void stopMeasuringDAC();
-void startMeasuringDAC();
 
 
 // ******************************
@@ -41,9 +38,6 @@ MotorizedPot motorpot("motorpot", A2, D5, D6);
 Relay rxrelay("rxrelay", D7);
 Adafruit_MCP4725 dac(0x62);
 LED led("led", A5, A6, A7);
-
-SimpleTimer dacTimer;
-int dacTimerNum;
 
 void setup() {
 
@@ -66,11 +60,6 @@ void setup() {
 
     rxrelay.open();
 
-    dac.begin();
-    dac.setValue(0, true);
-
-    dacTimerNum = dacTimer.setInterval(100, measureDAC);
-
 }
 
 // ******************************
@@ -84,39 +73,10 @@ void loop() {
     upbtn.loop();
     dnbtn.loop();
 
-    dacTimer.run();
+
 
 }
 
-void measureDAC() {
-
-    int feedbackPin = A1;
-
-    dac.setValue(dacValue);
-
-    int adcValue = analogRead(feedbackPin);
-
-    String s = String(dacValue) + ":" + String(adcValue);
-    char c[s.length() + 1];
-    s.toCharArray(c, s.length() + 1);
-
-    mqttStatus("dac", "value", c);
-
-    dacValue = dacValue + 10;
-
-    if (dacValue > 4095) {
-        stopMeasuringDAC();
-    }
-
-}
-
-void startMeasuringDAC() {
-    dacTimer.enable(dacTimerNum);
-}
-
-void stopMeasuringDAC() {
-    dacTimer.disable(dacTimerNum);
-}
 
 // ******************************
 // Connection State Callbacks

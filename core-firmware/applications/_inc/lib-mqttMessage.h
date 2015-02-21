@@ -11,9 +11,10 @@ class MqttMessage
         int intVal();
         bool boolVal();
         char* charVal();
+        bool topicIs(char* what);
         bool isStatusRequest();
         bool is(char* what);
-        bool isForMe(char* who);
+        bool isFor(char* who);
         bool isSetup(char* which);
         bool isCommand(char* which);
 
@@ -33,6 +34,10 @@ MqttMessage::MqttMessage(char* topic, char* shortTopic, char** parts, int count,
     _parts = parts;
     _val = val;
 
+}
+
+bool MqttMessage::topicIs(char* what) {
+    return equals(_short, what);
 }
 
 char** MqttMessage::topicParts() {
@@ -67,10 +72,8 @@ bool MqttMessage::is(char* what) {
     return equals(what, _val);
 }
 
-bool MqttMessage::isForMe(char* who) {
-
+bool MqttMessage::isFor(char* who) {
     char* part = (isStatusRequest()) ? _parts[3] : _parts[2];
-
     return equals(part, who) || equals(part, "all");
 }
 

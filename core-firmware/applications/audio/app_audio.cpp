@@ -32,7 +32,7 @@ void checkKnob();
 // Class instantiations
 // ******************************
 
-LED led(A0, A1, A2);
+LED led("led", A0, A1, A2);
 Amp amp("amp", D3, 0, D6, D7);
 Radio radio("radio", D2, D1, D0);
 QuadEncoder knob("knob", A4, A5);
@@ -116,9 +116,7 @@ void onEncBtnPress() {
 }
 
 void onMscBtnPress() {
-    if (!IS_CONNECTED) {
-        radio.skipStation();
-    }
+    radio.skipStation();
 }
 
 void onLedBtnPress() {

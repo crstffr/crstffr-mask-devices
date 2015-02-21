@@ -98,7 +98,7 @@ void MotorizedPot::sendStatus() {
 
 void MotorizedPot::mqtt(MqttMessage msg) {
 
-    if (!msg.isForMe(_name)) { return; }
+    if (!msg.isFor(_name)) { return; }
 
     mqttLog("MOTORPOT/forme", msg.topic());
 

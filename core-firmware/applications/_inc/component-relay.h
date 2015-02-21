@@ -50,7 +50,7 @@ void Relay::sendStatus() {
 
 void Relay::mqtt(MqttMessage msg) {
 
-    if (!msg.isForMe(_name)) { return; }
+    if (!msg.isFor(_name)) { return; }
 
     mqttLog("RELAY/forme", msg.topic());
 

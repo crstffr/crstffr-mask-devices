@@ -234,7 +234,7 @@ void LED::sendIntensity() {
 
 void LED::mqtt(MqttMessage msg) {
 
-    if (!msg.isForMe(_name)) { return; }
+    if (!msg.isFor(_name)) { return; }
 
     mqttLog("LED/forme", msg.topic());
 

@@ -12,6 +12,9 @@ void mqttPublish(char* topic, char* payload);
 void mqttCallback(char* topic, byte* payload, unsigned int length);
 void mqttCustomMessageHandler(MqttMessage msg);
 void mqttDefaultMessageHandler(MqttMessage msg);
+void mqttStatus(char* component, char* attribute, int payload);
+void mqttStatus(char* component, char* attribute, char* payload);
+void mqttStatus(char* component, char* payload);
 void mqttLog(char* topic, char* msg);
 void mqttLog(char* topic);
 
@@ -143,6 +146,16 @@ void mqttStatus(char* component, char* attribute, char* payload) {
     char charTopic[fullTopic.length() + 1];
     fullTopic.toCharArray(charTopic, fullTopic.length() + 1);
     mqttPublish(charTopic, payload);
+}
+
+void mqttStatus(char* component, char* attribute, int payload) {
+    char str[5] = "";
+    itoa(payload, str, 10);
+    mqttStatus(component, attribute, str);
+}
+
+void mqttStatus(char* component, char* payload) {
+    mqttStatus(component, "", payload);
 }
 
 

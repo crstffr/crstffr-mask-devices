@@ -60,6 +60,9 @@ void Radio::skipStation() {
         case 937:
             this->setStation(971);
             break;
+        case 963:
+            this->setStation(963);
+            break;
         case 971:
             this->setStation(1013);
             break;
