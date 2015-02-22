@@ -12,6 +12,7 @@ class Dac
     public:
         Dac(char* name, uint8_t addr);
         void mqtt(MqttMessage msg);
+        void onChange(callback fn);
         void setValue(int val, bool writeEEPROM);
         void setValue(int val);
         void sendStatus();
@@ -21,32 +22,38 @@ class Dac
         int _value;
         char* _name;
         uint8_t _addr;
+        callback _onChange;
         Adafruit_MCP4725 _dac;
 };
 
 Dac::Dac(char* name, uint8_t addr) : _dac(addr) {
+    _value = 0;
     _name = name;
     _addr = addr;
-}
-
-void Dac::begin() {
+    _onChange = noop;
     _dac.begin();
+    _dac.setValue(0);
 }
 
 void Dac::setValue(int val, bool writeEEPROM) {
     val = (val < 0) ? 0 : val;
     val = (val > 4095) ? 4095 : val;
-    _dac.setValue(val);
+    _dac.setValue(val, writeEEPROM);
     _value = val;
+    sendStatus();
+    _onChange();
 }
 
 void Dac::setValue(int val) {
     setValue(val, false);
-    sendStatus();
 }
 
 int Dac::getValue() {
     return _value;
+}
+
+void Dac::onChange(callback fn) {
+    _onChange = fn;
 }
 
 void Dac::sendStatus() {
