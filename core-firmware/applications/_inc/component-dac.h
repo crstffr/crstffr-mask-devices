@@ -40,7 +40,6 @@ void Dac::setValue(int val, bool writeEEPROM) {
     val = (val > 4095) ? 4095 : val;
     _dac.setValue(val, writeEEPROM);
     _value = val;
-    sendStatus();
     _onChange();
 }
 

@@ -148,6 +148,13 @@ void mqttStatus(char* component, char* attribute, char* payload) {
     mqttPublish(charTopic, payload);
 }
 
+void mqttStatus(char* component, char* attribute, float payload) {
+    String flt = String(payload);
+    char str[flt.length() + 1];
+    flt.toCharArray(str, flt.length() + 1);
+    mqttStatus(component, attribute, str);
+}
+
 void mqttStatus(char* component, char* attribute, int payload) {
     char str[5] = "";
     itoa(payload, str, 10);

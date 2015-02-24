@@ -1,43 +1,39 @@
 #include "application.h"
 #include "../_inc/core-common.h"
-#include "../_inc/component-button.h"
 #include "../_inc/component-dac.h"
+#include "../_inc/component-adc.h"
 
 // ******************************
 // Definitions
 // ******************************
 
-int feedbackPin = A1;
+
 
 // ******************************
 // Function Prototype Definitions
 // ******************************
 
-void runTest();
-void readADC();
-void startTest();
-void stopTest();
+void compare1();
+void compare2();
+void calibrate1();
 
 // ******************************
 // Class instantiation
 // ******************************
 
-Button btn1("btn1", D3, INPUT_PULLUP);
-Button btn2("btn2", D4, INPUT_PULLUP);
-Dac dac("dac", 0x62);
+Dac dac1("dac1", 0x63);
+Adc adc1("adc1", A1, 12, 3.3);
 
-SimpleTimer testTimer;
-int testTimerNum;
+Dac dac2("dac2", 0x62);
+Adc adc2("adc2", A2, 12, 3.3);
 
 void setup() {
 
     coreSetup();
-    mqttSetup(DEVICE_TYPE_TESTER);
+    mqttSetup("tester");
 
-    dac.onChange(readADC);
-
-    testTimerNum = testTimer.setInterval(100, runTest);
-    testTimer.disable(testTimerNum);
+    //dac1.onChange(compare1);
+    //dac2.onChange(compare2);
 
 }
 
@@ -46,61 +42,72 @@ void setup() {
 // ******************************
 
 void loop() {
-
     mqttLoop();
-    btn1.loop();
-    btn2.loop();
-    testTimer.run();
-
 }
 
-void runTest() {
-    int newValue = dac.getValue() + 10;
-    dac.setValue(newValue);
+void calibrate1() {
 
-    if (newValue > 4095) {
-        stopTest();
+    int i = 0;
+    int step = 1;
+    int steps = 32;
+    float vRef = 3.3;
+    int resolution = 4095;
+    float vStep = vRef / steps;
+    float goalV = step * vStep;
+    float currV = 0.0;
+    float prevV = 0.0;
+
+    mqttStatus("adc1", "goal", goalV);
+
+    for (i = 0; i < resolution; i++) {
+
+        dac1.setValue(i);
+
+        delay(110);
+
+        currV = adc1.getVoltage();
+
+        mqttStatus("dac1", "value", i);
+        mqttStatus("adc1", "currV", currV);
+
+        if (currV >= goalV) {
+
+            step = step + 1;
+            goalV = step * vStep;
+
+            mqttStatus("adc1", "step", step);
+            mqttStatus("adc1", "goalV", goalV);
+            adc1.compare(i);
+
+            if (step >= steps) {
+                continue;
+            }
+        }
     }
 }
 
-void readADC() {
-
-    delay(200);
-
-    String s;
-    int dacValue = dac.getValue();
-    int adcValue = analogRead(feedbackPin);
-
-    s = String(dacValue) + ":" + String(adcValue);
-    char c[s.length() + 1];
-    s.toCharArray(c, s.length() + 1);
-    mqttStatus("adc", "value", c);
+void compare1() {
+    delay(100);
+    adc1.read();
+    adc1.compare(dac1.getValue());
 }
 
-void startTest() {
-    testTimer.enable(testTimerNum);
-}
-
-void stopTest() {
-    testTimer.disable(testTimerNum);
+void compare2() {
+    delay(100);
+    adc1.read();
+    adc2.compare(dac2.getValue());
 }
 
 void mqttCustomMessageHandler(MqttMessage msg) {
 
-    dac.mqtt(msg);
+    dac1.mqtt(msg);
+    adc1.mqtt(msg);
 
-    if (msg.isFor("test")) {
+    dac2.mqtt(msg);
+    adc2.mqtt(msg);
 
-        if (msg.is("start")) {
-            startTest();
-            mqttStatus("test", "state", "running");
-        }
-
-        if (msg.is("stop")) {
-            stopTest();
-            mqttStatus("test", "state", "stopped");
-        }
-
+    if (msg.is("calibrate")) {
+        calibrate1();
     }
 
 }
