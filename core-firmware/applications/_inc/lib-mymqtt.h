@@ -19,7 +19,7 @@ void mqttLog(char* topic, char* msg);
 void mqttLog(char* topic);
 
 TCPClient tcp;
-SimpleTimer timer;
+SimpleTimer myMqttTimer;
 int connectTimer;
 callback connectCallback;
 callback disconnectCallback;
@@ -48,7 +48,7 @@ void mqttSetup(char* deviceType, callback onConnect, callback onDisconnect) {
 
     connectCallback = onConnect;
     disconnectCallback = onDisconnect;
-    connectTimer = timer.setInterval(2000, mqttConnect);
+    connectTimer = myMqttTimer.setInterval(2000, mqttConnect);
 
     mqttConnect();
 }
@@ -57,9 +57,9 @@ void mqttSetup(char* deviceType) { mqttSetup(deviceType, noop, noop); }
 
 void mqttLoop() {
     mqtt.loop();
-    timer.run();
+    myMqttTimer.run();
     if (mqtt.connected()) {
-        timer.disable(connectTimer);
+        myMqttTimer.disable(connectTimer);
         if (!BROKER_CONNECTED) {
 
             // At this point, the device has connected
@@ -78,7 +78,7 @@ void mqttLoop() {
         }
         BROKER_CONNECTED = true;
     } else {
-        timer.enable(connectTimer);
+        myMqttTimer.enable(connectTimer);
         if (BROKER_CONNECTED) {
             disconnectCallback();
         }

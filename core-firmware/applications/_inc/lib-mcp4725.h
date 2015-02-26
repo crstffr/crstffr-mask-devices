@@ -16,6 +16,8 @@
     v1.0  - First release
 */
 /**************************************************************************/
+#ifndef Adafruit_MCP4725_h
+#define Adafruit_MCP4725_h
 
 #define MCP4725_CMD_WRITEDAC            (0x40)  // Writes data to the DAC
 #define MCP4725_CMD_WRITEDACEEPROM      (0x60)  // Writes data to the DAC and the EEPROM (persisting the assigned value after reset)
@@ -87,3 +89,4 @@ void Adafruit_MCP4725::setValue( uint16_t output, bool writeEEPROM ) {
 }
 
 
+#endif

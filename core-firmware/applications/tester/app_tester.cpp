@@ -1,5 +1,6 @@
 #include "application.h"
 #include "../_inc/core-common.h"
+#include "../_inc/component-ldr.h"
 #include "../_inc/component-dac.h"
 #include "../_inc/component-adc.h"
 
@@ -7,6 +8,16 @@
 // Definitions
 // ******************************
 
+int ldrSteps = 32;
+int bitDepth = 12;
+float refVoltage = 3.2;
+
+int calibrateInc = 0;
+int calibrateStep = 0;
+char* calibrateName;
+float calibrateVoltageStep = refVoltage / ldrSteps;
+
+SimpleTimer timer;
 
 
 // ******************************
@@ -15,17 +26,20 @@
 
 void compare1();
 void compare2();
-void calibrate1();
+void calibrateStart();
+void calibrateRun();
 
 // ******************************
 // Class instantiation
 // ******************************
 
-Dac dac1("dac1", 0x63);
-Adc adc1("adc1", A1, 12, 3.3);
+Dac dac1("dac1", 0x63, bitDepth, refVoltage);
+Adc adc1("adc1", A1, bitDepth, refVoltage);
+Ldr ldr1("ldr1", dac1, adc1, 32);
 
-Dac dac2("dac2", 0x62);
-Adc adc2("adc2", A2, 12, 3.3);
+Dac dac2("dac2", 0x62, bitDepth, refVoltage);
+Adc adc2("adc2", A2, bitDepth, refVoltage);
+Ldr ldr2("ldr2", dac2, adc2, 32);
 
 void setup() {
 
@@ -43,71 +57,93 @@ void setup() {
 
 void loop() {
     mqttLoop();
+    timer.run();
 }
 
-void calibrate1() {
+Ldr *whichLdr;
+float goalV;
+float currV;
+float prevV;
+bool run;
+int wait;
+int min = 1750;
+int max = 2250;
 
-    int i = 0;
-    int step = 1;
-    int steps = 32;
-    float vRef = 3.3;
-    int resolution = 4095;
-    float vStep = vRef / steps;
-    float goalV = step * vStep;
-    float currV = 0.0;
-    float prevV = 0.0;
+void calibrateRun() {
 
-    mqttStatus("adc1", "goal", goalV);
+    currV = whichLdr->adc.getVoltage();
 
-    for (i = 0; i < resolution; i++) {
+    if (currV >= goalV) {
 
-        dac1.setValue(i);
+        mqttStatus(calibrateName, "step", calibrateStep);
+        mqttStatus(calibrateName, "goalV", goalV);
+        mqttStatus(calibrateName, "currV", currV);
+        whichLdr->adc.compare(calibrateInc);
 
-        delay(110);
-
-        currV = adc1.getVoltage();
-
-        mqttStatus("dac1", "value", i);
-        mqttStatus("adc1", "currV", currV);
-
-        if (currV >= goalV) {
-
-            step = step + 1;
-            goalV = step * vStep;
-
-            mqttStatus("adc1", "step", step);
-            mqttStatus("adc1", "goalV", goalV);
-            adc1.compare(i);
-
-            if (step >= steps) {
-                continue;
-            }
+        if (calibrateStep <= ldrSteps + 1) {
+            calibrateStep++;
+            goalV = calibrateStep * calibrateVoltageStep;
+            wait = 500;
+        } else {
+            run = false;
         }
+
+    } else {
+        wait = 25;
     }
+
+    if (run && calibrateInc < max) {
+        calibrateInc++;
+        whichLdr->dac.setValue(calibrateInc);
+        timer.setTimeout(wait, calibrateRun);
+    } else {
+        mqttAction(calibrateName, "calibrate-stop");
+    }
+
+    prevV = currV;
+
+}
+
+void calibrate(int which) {
+
+    if (which == 1) {
+        whichLdr = &ldr1;
+    } else if (which == 2) {
+        whichLdr = &ldr2;
+    }
+
+    run = true;
+    calibrateStep = 0;
+    calibrateInc = min;
+    whichLdr->dac.setValue(0);
+    calibrateName = whichLdr->name;
+    goalV = calibrateStep * calibrateVoltageStep;
+    mqttAction(calibrateName, "calibrate-start");
+    timer.setTimeout(1000, calibrateRun);
+
 }
 
 void compare1() {
-    delay(100);
     adc1.read();
     adc1.compare(dac1.getValue());
 }
 
-void compare2() {
-    delay(100);
-    adc1.read();
-    adc2.compare(dac2.getValue());
-}
-
 void mqttCustomMessageHandler(MqttMessage msg) {
 
-    dac1.mqtt(msg);
-    adc1.mqtt(msg);
+    ldr1.mqtt(msg);
+    ldr2.mqtt(msg);
 
-    dac2.mqtt(msg);
-    adc2.mqtt(msg);
-
-    if (msg.is("calibrate")) {
-        calibrate1();
+    if (msg.isFor("ldr1")) {
+        if (msg.is("calibrate")) {
+            calibrate(1);
+        }
     }
+
+    if (msg.isFor("ldr2")) {
+        if (msg.is("calibrate")) {
+            calibrate(2);
+        }
+    }
+
 
 }

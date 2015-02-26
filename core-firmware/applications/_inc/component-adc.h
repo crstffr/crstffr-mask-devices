@@ -8,9 +8,9 @@ class Adc
 {
     public:
         Adc(char* name, int pin, int bitDepth, float refVoltage);
-        void onChange(callback fn);
         void compare(int dacValue);
         void mqtt(MqttMessage msg);
+        float getVoltageStep();
         float getVoltage();
         void sendStatus();
         int getValue();
@@ -26,7 +26,6 @@ class Adc
         int _resolution;
         float _refVoltage;
         float _voltageStep;
-        callback _onChange;
 };
 
 Adc::Adc(char* name, int pin, int bitDepth, float refVoltage) {
@@ -34,7 +33,6 @@ Adc::Adc(char* name, int pin, int bitDepth, float refVoltage) {
     _value = 0;
     _voltage = 0;
     _name = name;
-    _onChange = noop;
     _bitDepth = bitDepth;
     _refVoltage = refVoltage;
     _resolution = pow(2.0, bitDepth) - 1;
@@ -42,11 +40,8 @@ Adc::Adc(char* name, int pin, int bitDepth, float refVoltage) {
 }
 
 void Adc::read() {
-    int value = analogRead(_pin);
-    if (value != _value) {
-        _value = value;
-        _voltage = _value * _voltageStep;
-    }
+    _value = analogRead(_pin);
+    _voltage = _value * _voltageStep;
 }
 
 int Adc::getValue() {
@@ -59,8 +54,8 @@ float Adc::getVoltage() {
     return _voltage;
 }
 
-void Adc::onChange(callback fn) {
-    _onChange = fn;
+float Adc::getVoltageStep() {
+    return _voltageStep;
 }
 
 void Adc::sendStatus() {
