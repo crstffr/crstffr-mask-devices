@@ -161,6 +161,12 @@ void mqttStatus(char* component, char* attribute, int payload) {
     mqttStatus(component, attribute, str);
 }
 
+void mqttStatus(char* component, char* attribute, String payload) {
+    char c[payload.length() + 1];
+    payload.toCharArray(c, payload.length() + 1);
+    mqttStatus(component, attribute, c);
+}
+
 void mqttStatus(char* component, char* payload) {
     mqttStatus(component, "", payload);
 }
