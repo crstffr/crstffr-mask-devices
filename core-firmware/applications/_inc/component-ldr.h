@@ -34,14 +34,15 @@ class Ldr
 
 Ldr::Ldr(char* _name, Dac& _dac, Adc& _adc, int steps) : dac(_dac), adc(_adc) {
     name = _name;
-    _steps = steps;
+    _steps = steps - 1;
     _calibrated = false;
     reset();
 }
 
 void Ldr::reset() {
     dac.setValue(0);
-    mqttStatus(name, "compare", "0:0");
+    delay(250);
+    sendStatus();
 }
 
 void Ldr::setLevel(int level) {

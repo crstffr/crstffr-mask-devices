@@ -14,7 +14,7 @@ int bitDepth = 12;
 float refVoltage = 3.3;
 
 int calibrateInc = 0;
-int calibrateStep = 1;
+int calibrateStep = 0;
 char* calibrateName;
 float calibrateVoltageStep = refVoltage / ldrSteps;
 
@@ -87,11 +87,11 @@ void calibrateRun() {
         mqttStatus(calibrateName, "step", calibrateStep);
 
         if (prevDiff > currDiff) {
-            mqttStatus(calibrateName, "voltage", prevV);
+            mqttStatus(calibrateName, "adc-vol", prevV);
             whichLdr->calibrate(calibrateStep, calibrateInc - 1);
             whichLdr->compare(calibrateInc - 1);
         } else {
-            mqttStatus(calibrateName, "voltage", currV);
+            mqttStatus(calibrateName, "adc-vol", currV);
             whichLdr->calibrate(calibrateStep, calibrateInc);
             whichLdr->compare(calibrateInc);
         }
@@ -105,7 +105,7 @@ void calibrateRun() {
         }
 
     } else {
-        wait = 10;
+        wait = 25;
     }
 
     if (run && calibrateInc < max) {
@@ -129,7 +129,7 @@ void calibrate(int which) {
     }
 
     run = true;
-    calibrateStep = 1;
+    calibrateStep = 0;
     calibrateInc = min;
     whichLdr->reset();
     calibrateName = whichLdr->name;

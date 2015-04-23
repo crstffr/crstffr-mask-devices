@@ -4,7 +4,7 @@
 #include "../_inc/component-relay.h"
 #include "../_inc/component-button.h"
 #include "../_inc/component-motorized-pot.h"
-#include "../_inc/lib-mcp4725.h"
+#include "../_inc/lib-ds1802.h"
 
 // ******************************
 // Definitions
@@ -25,6 +25,8 @@ void potChanged();
 void ledReset();
 void setVolume(int val);
 void sendVolume();
+void volUp();
+void volDn();
 
 
 
@@ -34,10 +36,12 @@ void sendVolume();
 
 Button upbtn("up-btn", D2, INPUT_PULLUP);
 Button dnbtn("dn-btn", D4, INPUT_PULLUP);
-MotorizedPot motorpot("motorpot", A2, D5, D6);
+MotorizedPot motorpot("motorpot", D3, D5, D6);
 Relay rxrelay("rxrelay", D7);
-Adafruit_MCP4725 dac(0x62);
-LED led("led", A5, A6, A7);
+Relay ampstby("ampstby", D1);
+
+LED led("led", A1, A6, A7);
+DS1802 volume(A2, D0);
 
 void setup() {
 
@@ -48,6 +52,7 @@ void setup() {
     led.setMaxIntensity(MAX_LED_INTENSITY);
     led.intensity(DEFAULT_LED_INTENSITY);
 
+    /* For Motorpot
     upbtn.onUp(ledReset);
     upbtn.onDown(onUpBtnPress);
     upbtn.onPress(ledReset);
@@ -55,10 +60,20 @@ void setup() {
     dnbtn.onUp(ledReset);
     dnbtn.onDown(onDnBtnPress);
     dnbtn.onPress(ledReset);
+    */
+
+
+    /* For DS1802 */
+    upbtn.onDown(volUp);
+    upbtn.onUp(ledReset);
+    dnbtn.onDown(volDn);
+    dnbtn.onUp(ledReset);
+
 
     ledReset();
-
     rxrelay.open();
+    ampstby.open();
+    setVolume(16);
 
 }
 
@@ -72,8 +87,6 @@ void loop() {
     led.loop();
     upbtn.loop();
     dnbtn.loop();
-
-
 
 }
 
@@ -103,6 +116,37 @@ void onAmpPowerOff() {
 // Button Press Handlers
 // ******************************
 
+
+void volUp() {
+    if (volLevel < 64) {
+        led.color("green");
+        volLevel++;
+        setVolume(volLevel);
+        delay(20);
+    }
+}
+
+void volDn() {
+    if (volLevel > 0) {
+        led.color("red");
+        volLevel--;
+        setVolume(volLevel);
+        delay(20);
+    }
+}
+
+void setVolume(int level) {
+    volume.setValue(64 - level);
+    volLevel = level;
+    sendVolume();
+}
+
+
+void sendVolume() {
+    mqttStatus("volume", "level", volLevel);
+}
+
+
 void ledReset() {
     led.color("blue");
     motorpot.stop();
@@ -110,21 +154,13 @@ void ledReset() {
 }
 
 void onUpBtnPress() {
-
-    startMeasuringDAC();
-
     led.color("green");
     motorpot.moveUp();
-
 }
 
 void onDnBtnPress() {
-
-    stopMeasuringDAC();
-
     led.color("red");
     motorpot.moveDown();
-
 }
 
 
@@ -135,6 +171,7 @@ void onDnBtnPress() {
 void mqttCustomMessageHandler(MqttMessage msg) {
 
     led.mqtt(msg);
+    ampstby.mqtt(msg);
     rxrelay.mqtt(msg);
     motorpot.mqtt(msg);
 

@@ -24,7 +24,7 @@ class Lightspeed
 
 Lightspeed::Lightspeed(char* _name, Ldr& _series, Ldr& _shunt, int steps) : series(_series), shunt(_shunt) {
     name = _name;
-    _steps = steps;
+    _steps = steps - 1;
     _level = 0;
 }
 

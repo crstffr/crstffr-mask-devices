@@ -10,6 +10,7 @@ public:
     DS1802(int pCS, int pMute, int fClk=SPI_CLOCK_DIV128);
 
 	void toggleMute();
+	void setValue(int v0);
 	void setValues(int v0, int v1);
 	void setMute(boolean m0, boolean m1);
 
@@ -80,6 +81,10 @@ void DS1802::setValues(int v0, int v1) {
 	_v1 = v1;
 
 	tx();
+}
+
+void DS1802::setValue(int v0) {
+	setValues(v0, v0);
 }
 
 void DS1802::tx() {
