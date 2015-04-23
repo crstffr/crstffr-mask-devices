@@ -8,11 +8,13 @@ class Adc
 {
     public:
         Adc(char* name, int pin, int bitDepth, float refVoltage);
-        void compare(int dacValue);
+        void compare(int value);
         void mqtt(MqttMessage msg);
         float getVoltageStep();
         float getVoltage();
+        void sendVoltage();
         void sendStatus();
+        void sendValue();
         int getValue();
         void read();
 
@@ -65,9 +67,21 @@ void Adc::sendStatus() {
     }
 }
 
-void Adc::compare(int dacValue) {
+void Adc::sendValue() {
     if (IS_CONNECTED) {
-        String s = String(dacValue) + ":" + String(_value);
+        mqttStatus(_name, "value", _value);
+    }
+}
+
+void Adc::sendVoltage() {
+    if (IS_CONNECTED) {
+        mqttStatus(_name, "voltage", _voltage);
+    }
+}
+
+void Adc::compare(int value) {
+    if (IS_CONNECTED) {
+        String s = String(value) + ":" + String(_value);
         char c[s.length() + 1];
         s.toCharArray(c, s.length() + 1);
         mqttStatus(_name, "compare", c);

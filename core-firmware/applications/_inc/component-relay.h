@@ -7,6 +7,7 @@ class Relay
         Relay(char* name, int pin);
         void mqtt(MqttMessage msg);
         void sendStatus();
+        bool isOpen();
         bool state();
         void open();
         void close();
@@ -28,6 +29,10 @@ bool Relay::state() {
     return _state == 1;
 }
 
+bool Relay::isOpen() {
+    return state();
+}
+
 void Relay::open() {
     digitalWrite(_pin, HIGH);
     _state = 1;
@@ -42,7 +47,7 @@ void Relay::close() {
 
 void Relay::sendStatus() {
     if (IS_CONNECTED) {
-        char state[3] = "";
+        char state[6] = "";
         strcpy(state, (_state) ? "open" : "close");
         mqttStatus(_name, "state", state);
     }

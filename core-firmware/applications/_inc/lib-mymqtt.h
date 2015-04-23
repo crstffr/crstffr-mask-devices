@@ -131,6 +131,7 @@ void mqttPublish(char* topic, char* payload) {
     char charTopic[fullTopic.length() + 1];
     fullTopic.toCharArray(charTopic, fullTopic.length() + 1);
     mqtt.publish(charTopic, payload);
+    delay(100);
 
 }
 

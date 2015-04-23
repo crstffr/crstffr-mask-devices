@@ -1,10 +1,10 @@
 #include "application.h"
 #include "../_inc/core-common.h"
+#include "../_inc/component-adc.h"
 #include "../_inc/component-led.h"
 #include "../_inc/component-relay.h"
 #include "../_inc/component-button.h"
-#include "../_inc/component-motorized-pot.h"
-#include "../_inc/lib-ds1802.h"
+#include "../_inc/component-quadencoder.h"
 
 // ******************************
 // Definitions
@@ -12,6 +12,8 @@
 
 int volLevel = 0;
 int dacValue = 0;
+int rssiTimer = 0;
+
 
 // ******************************
 // Function Prototype Definitions
@@ -19,61 +21,74 @@ int dacValue = 0;
 
 void onConnect();
 void onDisconnect();
-void onUpBtnPress();
-void onDnBtnPress();
+void onKnobPress();
+void onKnobHold();
+void rssiToggle();
+void powerToggle();
+void powerOff();
+void powerOn();
 void potChanged();
-void ledReset();
 void setVolume(int val);
 void sendVolume();
+void sendRssi();
 void volUp();
 void volDn();
 
+// ******************************
+// Pin Definitions
+// ******************************
 
+int pinEnc1 = A1;
+int pinEnc2 = A2;
+int pinBtnEnc = A3;
+
+int pinRelay12V = D4;
+int pinRelayFan = D7;
+int pinRelayAmpStby = D6;
+
+int pinLedR = A5;
+int pinLedG = A6;
+int pinLedB = A7;
+
+int pinAmpRSSI = A0;
 
 // ******************************
 // Class instantiations
 // ******************************
 
-Button upbtn("up-btn", D2, INPUT_PULLUP);
-Button dnbtn("dn-btn", D4, INPUT_PULLUP);
-MotorizedPot motorpot("motorpot", D3, D5, D6);
-Relay rxrelay("rxrelay", D7);
-Relay ampstby("ampstby", D1);
+SimpleTimer timer;
 
-LED led("led", A1, A6, A7);
-DS1802 volume(A2, D0);
+QuadEncoder knob("knob", pinEnc1, pinEnc2);
+Button knobbtn("knob-btn", pinBtnEnc, INPUT_PULLUP);
+
+Relay rxrelay("rxrelay", pinRelay12V);
+Relay fanrelay("fanrelay", pinRelayFan);
+Relay ampstby("ampstby", pinRelayAmpStby);
+
+LED led("led", pinLedR, pinLedG, pinLedB);
+Adc rssi("rssi", pinAmpRSSI, 12, 3.3);
+
+// ******************************
+// Application Setup
+// ******************************
 
 void setup() {
 
     coreSetup();
     mqttSetup(DEVICE_TYPE_SMARTAMP, onConnect, onDisconnect);
 
-    led.on();
+    led.off();
+    led.color("red");
     led.setMaxIntensity(MAX_LED_INTENSITY);
     led.intensity(DEFAULT_LED_INTENSITY);
 
-    /* For Motorpot
-    upbtn.onUp(ledReset);
-    upbtn.onDown(onUpBtnPress);
-    upbtn.onPress(ledReset);
+    knob.onUp(volUp);
+    knob.onDown(volDn);
+    knobbtn.onPress(onKnobPress);
+    knobbtn.onHold(onKnobHold);
 
-    dnbtn.onUp(ledReset);
-    dnbtn.onDown(onDnBtnPress);
-    dnbtn.onPress(ledReset);
-    */
-
-
-    /* For DS1802 */
-    upbtn.onDown(volUp);
-    upbtn.onUp(ledReset);
-    dnbtn.onDown(volDn);
-    dnbtn.onUp(ledReset);
-
-
-    ledReset();
-    rxrelay.open();
-    ampstby.open();
-    setVolume(16);
+    rssiTimer = timer.setInterval(1000, sendRssi);
+    timer.disable(rssiTimer);
 
 }
 
@@ -83,13 +98,14 @@ void setup() {
 
 void loop() {
 
+    timer.run();
     mqttLoop();
+
     led.loop();
-    upbtn.loop();
-    dnbtn.loop();
+    knob.loop();
+    knobbtn.loop();
 
 }
-
 
 // ******************************
 // Connection State Callbacks
@@ -111,15 +127,46 @@ void onAmpPowerOff() {
     //led.off();
 }
 
+// ******************************
+// Power State Management
+// ******************************
+
+void onKnobHold() {
+    rssiToggle();
+}
+
+void onKnobPress() {
+    powerToggle();
+}
+
+void powerToggle() {
+    if (rxrelay.isOpen()) {
+        powerOff();
+    } else {
+        powerOn();
+    }
+}
+
+void powerOff() {
+    led.off();
+    rxrelay.close();
+    ampstby.close();
+}
+
+void powerOn() {
+    led.on();
+    setVolume(16);
+    rxrelay.open();
+    ampstby.open();
+    timer.setTimeout(2000, sendRssi);
+}
 
 // ******************************
 // Button Press Handlers
 // ******************************
 
-
 void volUp() {
     if (volLevel < 64) {
-        led.color("green");
         volLevel++;
         setVolume(volLevel);
         delay(20);
@@ -128,7 +175,6 @@ void volUp() {
 
 void volDn() {
     if (volLevel > 0) {
-        led.color("red");
         volLevel--;
         setVolume(volLevel);
         delay(20);
@@ -136,31 +182,29 @@ void volDn() {
 }
 
 void setVolume(int level) {
-    volume.setValue(64 - level);
     volLevel = level;
     sendVolume();
 }
-
 
 void sendVolume() {
     mqttStatus("volume", "level", volLevel);
 }
 
+// ******************************
+// Manage RSSI state (sending antenna reception data)
+// ******************************
 
-void ledReset() {
-    led.color("blue");
-    motorpot.stop();
-    motorpot.sendStatus();
+void rssiToggle() {
+    if (timer.isEnabled(rssiTimer)) {
+        timer.disable(rssiTimer);
+    } else {
+        timer.enable(rssiTimer);
+    }
 }
 
-void onUpBtnPress() {
-    led.color("green");
-    motorpot.moveUp();
-}
-
-void onDnBtnPress() {
-    led.color("red");
-    motorpot.moveDown();
+void sendRssi() {
+    rssi.read();
+    rssi.sendStatus();
 }
 
 
@@ -171,8 +215,8 @@ void onDnBtnPress() {
 void mqttCustomMessageHandler(MqttMessage msg) {
 
     led.mqtt(msg);
+    rssi.mqtt(msg);
     ampstby.mqtt(msg);
     rxrelay.mqtt(msg);
-    motorpot.mqtt(msg);
 
 }
