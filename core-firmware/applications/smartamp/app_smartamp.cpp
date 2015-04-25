@@ -11,8 +11,6 @@
 // Definitions
 // ******************************
 
-int volLevel = 0;
-int dacValue = 0;
 int rssiTimer = 0;
 
 
@@ -29,8 +27,6 @@ void powerToggle();
 void powerOff();
 void powerOn();
 void potChanged();
-void setVolume(int val);
-void sendVolume();
 void sendRssi();
 void volUp();
 void volDn();
@@ -156,13 +152,14 @@ void powerOff() {
     led.off();
     rxrelay.close();
     ampstby.close();
+    volume.setLevel(16);
 }
 
 void powerOn() {
     led.on();
-    setVolume(16);
     rxrelay.open();
     ampstby.open();
+    volume.setLevel(16);
     timer.setTimeout(3000, sendRssi);
 }
 
@@ -171,29 +168,14 @@ void powerOn() {
 // ******************************
 
 void volUp() {
-    if (volLevel < 64) {
-        volLevel++;
-        setVolume(volLevel);
-        delay(20);
-    }
+    volume.up();
 }
 
 void volDn() {
-    if (volLevel > 0) {
-        volLevel--;
-        setVolume(volLevel);
-        delay(20);
-    }
+    volume.down();
 }
 
-void setVolume(int level) {
-    volLevel = level;
-    sendVolume();
-}
 
-void sendVolume() {
-    //mqttStatus("volume", "level", volLevel);
-}
 
 // ******************************
 // Manage RSSI state (sending antenna reception data)

@@ -8,13 +8,16 @@ class DS1882
         void mqtt(MqttMessage msg);
         void setLevel(int level);
         void sendStatus();
+        int  level();
         void setup();
         void mute();
+        void down();
+        void up();
 
     private:
         char* _name;
         int _level;
-        int _address;
+        byte _address;
         bool _cfgUseEEPROM;
         bool _cfgUseZeroCross;
         bool _cfgUse32Positions;
@@ -29,26 +32,27 @@ class DS1882
 DS1882::DS1882(char* name)
 {
     _name = name;
+    _r0 = 0;
+    _r1 = 0;
+    _r2 = 0;
 }
 
 void DS1882::setup() {
 
+    _level = 0;
     _address = 40;
 
     pinMode(D2, OUTPUT);
     digitalWrite(D2, HIGH);
 
-    //Wire.setSpeed(CLOCK_SPEED_400KHZ);
-
+    Wire.setSpeed(CLOCK_SPEED_400KHZ);
+    Wire.stretchClock(true);
     Wire.begin();
 
     Wire.beginTransmission(_address);
-    Wire.write(134); // 0b10000110;
-    _r0 = Wire.endTransmission();
-
-    delay(25);
-
-    setLevel(32);
+    Wire.write(0b10000110);
+    Wire.write(1);
+    _r0 = Wire.endTransmission(true);
 
 }
 
@@ -67,7 +71,7 @@ void DS1882::setLevel(int level) {
 
     Wire.beginTransmission(_address);
     Wire.write(setting);
-    _r1 = Wire.endTransmission();
+    _r1 = Wire.endTransmission(true);
 
     delay(25);
 
@@ -76,7 +80,7 @@ void DS1882::setLevel(int level) {
     byte v1 = 0b01000000 | setting;
     Wire.beginTransmission(_address);
     Wire.write(v1);
-    _r2 = Wire.endTransmission();
+    _r2 = Wire.endTransmission(true);
 
     sendStatus();
 
@@ -86,13 +90,21 @@ void DS1882::mute() {
     setLevel(0);
 }
 
-void DS1882::sendStatus() {
-    mqttStatus("volume", "level", _level);
-    mqttStatus("volume", "r0", _r0);
-    mqttStatus("volume", "r1", _r1);
-    mqttStatus("volume", "r2", _r2);
+void DS1882::up() {
+    setLevel(++_level);
 }
 
+void DS1882::down() {
+    setLevel(--_level);
+}
+
+void DS1882::sendStatus() {
+    mqttStatus("volume", "level", _level);
+}
+
+int DS1882::level() {
+    return _level;
+}
 
 void DS1882::mqtt(MqttMessage msg) {
 
@@ -106,11 +118,11 @@ void DS1882::mqtt(MqttMessage msg) {
     }
 
     if (msg.isCommand("up")) {
-        setLevel(_level + 1);
+        up();
     }
 
-    if (msg.isCommand("dn")) {
-        setLevel(_level - 1);
+    if (msg.isCommand("down")) {
+        down();
     }
 
     if (msg.isCommand("mute")) {
