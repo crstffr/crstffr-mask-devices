@@ -1,5 +1,6 @@
 #include "application.h"
 #include "../_inc/core-common.h"
+#include "../_inc/lib-ds1882.h"
 #include "../_inc/component-adc.h"
 #include "../_inc/component-led.h"
 #include "../_inc/component-relay.h"
@@ -38,9 +39,9 @@ void volDn();
 // Pin Definitions
 // ******************************
 
-int pinEnc1 = A1;
-int pinEnc2 = A2;
-int pinBtnEnc = A3;
+int pinKnob1 = A0;
+int pinKnob2 = A1;
+int pinBtnEnc = A2;
 
 int pinRelay12V = D4;
 int pinRelayFan = D7;
@@ -50,7 +51,7 @@ int pinLedR = A5;
 int pinLedG = A6;
 int pinLedB = A7;
 
-int pinAmpRSSI = A0;
+int pinAmpRSSI = A3;
 
 // ******************************
 // Class instantiations
@@ -58,7 +59,7 @@ int pinAmpRSSI = A0;
 
 SimpleTimer timer;
 
-QuadEncoder knob("knob", pinEnc1, pinEnc2);
+QuadEncoder knob("knob", pinKnob1, pinKnob2);
 Button knobbtn("knob-btn", pinBtnEnc, INPUT_PULLUP);
 
 Relay rxrelay("rxrelay", pinRelay12V);
@@ -67,6 +68,8 @@ Relay ampstby("ampstby", pinRelayAmpStby);
 
 LED led("led", pinLedR, pinLedG, pinLedB);
 Adc rssi("rssi", pinAmpRSSI, 12, 3.3);
+
+DS1882 volume("volume");
 
 // ******************************
 // Application Setup
@@ -89,6 +92,8 @@ void setup() {
 
     rssiTimer = timer.setInterval(1000, sendRssi);
     timer.disable(rssiTimer);
+
+    volume.setup();
 
 }
 
@@ -158,7 +163,7 @@ void powerOn() {
     setVolume(16);
     rxrelay.open();
     ampstby.open();
-    timer.setTimeout(2000, sendRssi);
+    timer.setTimeout(3000, sendRssi);
 }
 
 // ******************************
@@ -187,7 +192,7 @@ void setVolume(int level) {
 }
 
 void sendVolume() {
-    mqttStatus("volume", "level", volLevel);
+    //mqttStatus("volume", "level", volLevel);
 }
 
 // ******************************
@@ -218,5 +223,6 @@ void mqttCustomMessageHandler(MqttMessage msg) {
     rssi.mqtt(msg);
     ampstby.mqtt(msg);
     rxrelay.mqtt(msg);
+    volume.mqtt(msg);
 
 }

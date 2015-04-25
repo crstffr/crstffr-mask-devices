@@ -9,6 +9,8 @@ class QuadEncoder
     void loop();
     void onUp(callback fn);
     void onDown(callback fn);
+    void up();
+    void dn();
   private:
     bool _moved;
     char* _name;
@@ -47,8 +49,8 @@ QuadEncoder::QuadEncoder(char* name, int pin1, int pin2)
 
     _onUp = noop;
     _onDown = noop;
-}
 
+}
 
 void QuadEncoder::onUp(callback fn) {
     _onUp = fn;
@@ -88,14 +90,14 @@ char QuadEncoder::state()
     if (_pos==0){
       if (_turnCount>0){
         _turnCount=0;
-                _moved = true;
+        _moved = true;
         return '>';
       } else if (_turnCount<0){
-                _moved = true;
+        _moved = true;
         _turnCount=0;
         return '<';
       } else {
-                _moved = false;
+        _moved = false;
         _turnCount=0;
         return '-';
       }
@@ -107,26 +109,30 @@ char QuadEncoder::state()
   }
 }
 
-
 void QuadEncoder::loop() {
-
     switch (this->state()) {
         case '>':
-            this->_onUp();
-            if (IS_CONNECTED) {
-                mqttAction(_name, "up");
-            }
+            up();
             break;
-
         case '<':
-            this->_onDown();
-            if (IS_CONNECTED) {
-                mqttAction(_name, "down");
-            }
+            dn();
             break;
     }
 }
 
+void QuadEncoder::up() {
+    this->_onUp();
+    if (IS_CONNECTED) {
+        mqttAction(_name, "up");
+    }
+}
+
+void QuadEncoder::dn() {
+    this->_onDown();
+    if (IS_CONNECTED) {
+        mqttAction(_name, "down");
+    }
+}
 
 #endif
 
