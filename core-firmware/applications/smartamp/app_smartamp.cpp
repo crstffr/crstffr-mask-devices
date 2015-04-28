@@ -5,8 +5,8 @@
 #include "../_inc/component-led.h"
 #include "../_inc/component-relay.h"
 #include "../_inc/component-button.h"
+#include "../_inc/component-selector.h"
 #include "../_inc/component-quadencoder.h"
-//#include "../_inc/component-rotaryencoder.h"
 
 // ******************************
 // Definitions
@@ -24,6 +24,7 @@ void onDisconnect();
 void onKnobPress();
 void onKnobHold();
 void rssiToggle();
+void inputToggle();
 void powerToggle();
 void powerOff();
 void powerOn();
@@ -41,9 +42,12 @@ void volComplete(int i);
 int pinKnob1 = A0;
 int pinKnob2 = A1;
 int pinBtnEnc = A2;
+int pinBtnInput = D7;
 
+int pinSelector1 = D2;
+int pinSelector2 = D3;
 int pinRelay12V = D4;
-int pinRelayFan = D7;
+//int pinRelayFan = D7;
 int pinRelayAmpStby = D6;
 
 int pinLedR = A5;
@@ -51,6 +55,7 @@ int pinLedG = A6;
 int pinLedB = A7;
 
 int pinAmpRSSI = A3;
+
 
 // ******************************
 // Class instantiations
@@ -62,14 +67,17 @@ QuadEncoder knob("knob", pinKnob1, pinKnob2, 12);
 //RotaryEncoder encoder("encoder", pinKnob1, pinKnob2, 12);
 
 Button knobbtn("knob-btn", pinBtnEnc, INPUT_PULLUP);
+Button inputbtn("input-btn", pinBtnInput, INPUT_PULLUP);
 
 Relay rxrelay("rxrelay", pinRelay12V);
-Relay fanrelay("fanrelay", pinRelayFan);
+// Relay fanrelay("fanrelay", pinRelayFan);
 Relay ampstby("ampstby", pinRelayAmpStby);
+
 
 DS1882 volume("volume");
 Adc rssi("rssi", pinAmpRSSI, 12, 3.3);
 LED led("led", pinLedR, pinLedG, pinLedB);
+Selector selector("selector", pinSelector1, pinSelector2);
 
 
 
@@ -96,6 +104,8 @@ void setup() {
     knobbtn.onPress(onKnobPress);
     knobbtn.onHold(onKnobHold);
 
+    inputbtn.onPress(inputToggle);
+
     //encoder.onUp(volUp);
     //encoder.onDown(volDn);
     //encoder.onChange(onEncoderChange);
@@ -120,6 +130,7 @@ void loop() {
     led.loop();
     knob.loop();
     knobbtn.loop();
+    inputbtn.loop();
 
     //encoder.loop();
 
@@ -154,7 +165,6 @@ void volChange(int i) {
 }
 
 void volComplete(int i) {
-    //mqttStatus("volume", "changed", i);
     volume.sendStatus();
 }
 
@@ -164,6 +174,18 @@ void onKnobHold() {
 
 void onKnobPress() {
     powerToggle();
+}
+
+void inputToggle() {
+    switch (selector.getSelection()) {
+        case 1:
+            selector.select(3);
+            break;
+        case 3:
+            selector.select(1);
+            break;
+    }
+    selector.sendStatus();
 }
 
 void powerToggle() {
@@ -236,5 +258,6 @@ void mqttCustomMessageHandler(MqttMessage msg) {
     ampstby.mqtt(msg);
     rxrelay.mqtt(msg);
     volume.mqtt(msg);
+    selector.mqtt(msg);
 
 }
