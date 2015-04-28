@@ -7,6 +7,7 @@ class DS1882
         DS1882(char* name);
         void mqtt(MqttMessage msg);
         void setLevel(int level);
+        void changeBy(int val);
         void sendStatus();
         int  level();
         void setup();
@@ -21,10 +22,6 @@ class DS1882
         bool _cfgUseEEPROM;
         bool _cfgUseZeroCross;
         bool _cfgUse32Positions;
-        int _r0;
-        int _r1;
-        int _r2;
-
 };
 
 #endif
@@ -32,18 +29,12 @@ class DS1882
 DS1882::DS1882(char* name)
 {
     _name = name;
-    _r0 = 0;
-    _r1 = 0;
-    _r2 = 0;
 }
 
 void DS1882::setup() {
 
     _level = 0;
     _address = 40;
-
-    pinMode(D2, OUTPUT);
-    digitalWrite(D2, HIGH);
 
     Wire.setSpeed(CLOCK_SPEED_400KHZ);
     Wire.stretchClock(true);
@@ -52,7 +43,7 @@ void DS1882::setup() {
     Wire.beginTransmission(_address);
     Wire.write(0b10000110);
     Wire.write(1);
-    _r0 = Wire.endTransmission(true);
+    Wire.endTransmission(true);
 
 }
 
@@ -60,6 +51,7 @@ void DS1882::setLevel(int level) {
 
     if (level > 63) { level = 63; }
     if (level < 0)  { level =  0; }
+
     _level = level;
 
     // Volume settings are opposite our usual thinking.
@@ -71,19 +63,22 @@ void DS1882::setLevel(int level) {
 
     Wire.beginTransmission(_address);
     Wire.write(setting);
-    _r1 = Wire.endTransmission(true);
+    Wire.endTransmission(true);
 
-    delay(25);
+    delay(10);
 
     // Send a command to the DS1882 for the second pot
 
     byte v1 = 0b01000000 | setting;
     Wire.beginTransmission(_address);
     Wire.write(v1);
-    _r2 = Wire.endTransmission(true);
+    Wire.endTransmission(true);
 
-    sendStatus();
+}
 
+void DS1882::changeBy(int val) {
+    _level = _level + val;
+    setLevel(_level);
 }
 
 void DS1882::mute() {
@@ -91,12 +86,15 @@ void DS1882::mute() {
 }
 
 void DS1882::up() {
-    setLevel(++_level);
+    _level++;
+    setLevel(_level);
 }
 
 void DS1882::down() {
-    setLevel(--_level);
+    _level--;
+    setLevel(_level);
 }
+
 
 void DS1882::sendStatus() {
     mqttStatus("volume", "level", _level);

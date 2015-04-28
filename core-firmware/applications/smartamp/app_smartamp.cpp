@@ -6,6 +6,7 @@
 #include "../_inc/component-relay.h"
 #include "../_inc/component-button.h"
 #include "../_inc/component-quadencoder.h"
+//#include "../_inc/component-rotaryencoder.h"
 
 // ******************************
 // Definitions
@@ -30,6 +31,8 @@ void potChanged();
 void sendRssi();
 void volUp();
 void volDn();
+void volChange(int i);
+void volComplete(int i);
 
 // ******************************
 // Pin Definitions
@@ -55,17 +58,21 @@ int pinAmpRSSI = A3;
 
 SimpleTimer timer;
 
-QuadEncoder knob("knob", pinKnob1, pinKnob2);
+QuadEncoder knob("knob", pinKnob1, pinKnob2, 12);
+//RotaryEncoder encoder("encoder", pinKnob1, pinKnob2, 12);
+
 Button knobbtn("knob-btn", pinBtnEnc, INPUT_PULLUP);
 
 Relay rxrelay("rxrelay", pinRelay12V);
 Relay fanrelay("fanrelay", pinRelayFan);
 Relay ampstby("ampstby", pinRelayAmpStby);
 
-LED led("led", pinLedR, pinLedG, pinLedB);
-Adc rssi("rssi", pinAmpRSSI, 12, 3.3);
-
 DS1882 volume("volume");
+Adc rssi("rssi", pinAmpRSSI, 12, 3.3);
+LED led("led", pinLedR, pinLedG, pinLedB);
+
+
+
 
 // ******************************
 // Application Setup
@@ -81,10 +88,18 @@ void setup() {
     led.setMaxIntensity(MAX_LED_INTENSITY);
     led.intensity(DEFAULT_LED_INTENSITY);
 
-    knob.onUp(volUp);
-    knob.onDown(volDn);
+    //knob.onUp(volUp);
+    //knob.onDown(volDn);
+    knob.onChange(volChange);
+    knob.onComplete(volComplete);
+
     knobbtn.onPress(onKnobPress);
     knobbtn.onHold(onKnobHold);
+
+    //encoder.onUp(volUp);
+    //encoder.onDown(volDn);
+    //encoder.onChange(onEncoderChange);
+    //encoder.onComplete(onEncoderComplete);
 
     rssiTimer = timer.setInterval(1000, sendRssi);
     timer.disable(rssiTimer);
@@ -105,6 +120,8 @@ void loop() {
     led.loop();
     knob.loop();
     knobbtn.loop();
+
+    //encoder.loop();
 
 }
 
@@ -132,6 +149,15 @@ void onAmpPowerOff() {
 // Power State Management
 // ******************************
 
+void volChange(int i) {
+    volume.changeBy(i);
+}
+
+void volComplete(int i) {
+    //mqttStatus("volume", "changed", i);
+    volume.sendStatus();
+}
+
 void onKnobHold() {
     rssiToggle();
 }
@@ -149,18 +175,20 @@ void powerToggle() {
 }
 
 void powerOff() {
-    led.off();
+    volume.mute();
+    delay(100);
     rxrelay.close();
+    delay(100);
     ampstby.close();
-    volume.setLevel(16);
+    led.off();
 }
 
 void powerOn() {
-    led.on();
+    timer.setTimeout(3000, sendRssi);
+    volume.setLevel(30);
     rxrelay.open();
     ampstby.open();
-    volume.setLevel(16);
-    timer.setTimeout(3000, sendRssi);
+    led.on();
 }
 
 // ******************************
@@ -169,10 +197,12 @@ void powerOn() {
 
 void volUp() {
     volume.up();
+    volume.sendStatus();
 }
 
 void volDn() {
     volume.down();
+    volume.sendStatus();
 }
 
 
