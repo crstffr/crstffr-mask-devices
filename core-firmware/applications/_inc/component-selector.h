@@ -7,29 +7,21 @@
 
 class Selector
 {
-    public:
-        Selector(char* name, int pin1, int pin2);
-        void mqtt(MqttMessage msg);
-        void select(int input);
-        int getSelection();
-        void sendStatus();
-
     private:
         char* _name;
         ADG409 _chip;
+
+    public:
+        Selector(char* name, int pin1, int pin2);
+        int getSelection() { return _chip.getSelection(); };
+        void select(int input) { _chip.select(input); };
+        void mqtt(MqttMessage msg);
+        void sendStatus();
 };
 
 Selector::Selector(char* name, int pin1, int pin2) : _chip(pin1, pin2) {
     _name = name;
     _chip.select(1);
-}
-
-int Selector::getSelection() {
-    return _chip.getSelection();
-}
-
-void Selector::select(int input) {
-    _chip.select(input);
 }
 
 void Selector::sendStatus() {

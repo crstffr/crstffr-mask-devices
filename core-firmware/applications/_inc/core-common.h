@@ -1,5 +1,6 @@
 #include "core-constants.h"
 #include "core-utils.h"
+#include "lib-ringbuffer.h"
 #include "lib-memory.h"
 #include "lib-timer.h"
 #include "lib-mqtt.h"

@@ -149,17 +149,18 @@ void QuadEncoder::checkTimer() {
 
         if (_startTime + 125 < millis()) {
             int change = abs(_realChange);
-            if (change >= _ppr / 4) {
+            if (change >= _ppr / 2) {
                 _accelMult = 3;
-            } else if (change >= _ppr / 6) {
+            } else if (change >= _ppr / 4) {
                 _accelMult = 2;
             } else {
                 _accelMult = 1;
             }
         }
+
         // Enough time has gone by, lets clean up
 
-        if (_startTime + 500 < millis()) {
+        if (_startTime + 300 < millis()) {
             _onComplete(_calcChange);
             _calcChange = 0;
             _realChange = 0;

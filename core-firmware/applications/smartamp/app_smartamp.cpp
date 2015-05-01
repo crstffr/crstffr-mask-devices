@@ -7,13 +7,13 @@
 #include "../_inc/component-button.h"
 #include "../_inc/component-selector.h"
 #include "../_inc/component-quadencoder.h"
+#include "../_inc/lib-ir-detector.h"
 
 // ******************************
 // Definitions
 // ******************************
 
 int rssiTimer = 0;
-
 
 // ******************************
 // Function Prototype Definitions
@@ -34,6 +34,7 @@ void volUp();
 void volDn();
 void volChange(int i);
 void volComplete(int i);
+void IRUpdate();
 
 // ******************************
 // Pin Definitions
@@ -50,12 +51,12 @@ int pinRelay12V = D4;
 //int pinRelayFan = D7;
 int pinRelayAmpStby = D6;
 
+int pinAmpRSSI = A3;
+int pinIR = A4;
+
 int pinLedR = A5;
 int pinLedG = A6;
 int pinLedB = A7;
-
-int pinAmpRSSI = A3;
-
 
 // ******************************
 // Class instantiations
@@ -64,23 +65,19 @@ int pinAmpRSSI = A3;
 SimpleTimer timer;
 
 QuadEncoder knob("knob", pinKnob1, pinKnob2, 12);
-//RotaryEncoder encoder("encoder", pinKnob1, pinKnob2, 12);
 
 Button knobbtn("knob-btn", pinBtnEnc, INPUT_PULLUP);
 Button inputbtn("input-btn", pinBtnInput, INPUT_PULLUP);
 
 Relay rxrelay("rxrelay", pinRelay12V);
-// Relay fanrelay("fanrelay", pinRelayFan);
 Relay ampstby("ampstby", pinRelayAmpStby);
-
 
 DS1882 volume("volume");
 Adc rssi("rssi", pinAmpRSSI, 12, 3.3);
 LED led("led", pinLedR, pinLedG, pinLedB);
 Selector selector("selector", pinSelector1, pinSelector2);
 
-
-
+IRDetector IR(pinIR);
 
 // ******************************
 // Application Setup
@@ -96,8 +93,6 @@ void setup() {
     led.setMaxIntensity(MAX_LED_INTENSITY);
     led.intensity(DEFAULT_LED_INTENSITY);
 
-    //knob.onUp(volUp);
-    //knob.onDown(volDn);
     knob.onChange(volChange);
     knob.onComplete(volComplete);
 
@@ -106,15 +101,12 @@ void setup() {
 
     inputbtn.onPress(inputToggle);
 
-    //encoder.onUp(volUp);
-    //encoder.onDown(volDn);
-    //encoder.onChange(onEncoderChange);
-    //encoder.onComplete(onEncoderComplete);
-
     rssiTimer = timer.setInterval(1000, sendRssi);
     timer.disable(rssiTimer);
 
     volume.setup();
+
+    attachInterrupt(pinIR, IRUpdate, FALLING);
 
 }
 
@@ -132,8 +124,68 @@ void loop() {
     knobbtn.loop();
     inputbtn.loop();
 
-    //encoder.loop();
+    while (IR.available()) {
 
+        int code = IR.pop(); // Receive command code
+
+        switch (code) {
+
+            // POWER
+            case 0x10EFD827:
+                mqttStatus("ir", "btn", "POWER");
+                powerToggle();
+                break;
+
+            // A BUTTON
+            case 0x10EFF807:
+                mqttStatus("ir", "btn", "A");
+                selector.select(1);
+                break;
+
+            // B BUTTON
+            case 0x10EF7887:
+                mqttStatus("ir", "btn", "B");
+                selector.select(2);
+                break;
+
+            // C BUTTON
+            case 0x10EF58A7:
+                mqttStatus("ir", "btn", "C");
+                selector.select(3);
+                break;
+
+            // UP ARROW
+            case 0x10EFA05F:
+                mqttStatus("ir", "btn", "UP");
+                volume.up();
+                break;
+
+            // DOWN ARROW
+            case 0x10EF00FF:
+                mqttStatus("ir", "btn", "DOWN");
+                volume.down();
+                break;
+
+            // LEFT ARROW
+            case 0x10EF10EF:
+                mqttStatus("ir", "btn", "LEFT");
+                break;
+
+            // RIGHT ARROW
+            case 0x10EF807F:
+                mqttStatus("ir", "btn", "RIGHT");
+                break;
+
+            // MIDDLE CIRCLE
+            case 0x10EF20DF:
+                mqttStatus("ir", "btn", "CIRCLE");
+                break;
+
+            default:
+                mqttStatus("ir", "code", code);
+                break;
+        }
+    }
 }
 
 // ******************************
@@ -159,6 +211,10 @@ void onAmpPowerOff() {
 // ******************************
 // Power State Management
 // ******************************
+
+void IRUpdate() {
+    IR.update();
+}
 
 void volChange(int i) {
     volume.changeBy(i);

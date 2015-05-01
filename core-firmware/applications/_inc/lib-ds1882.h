@@ -86,13 +86,11 @@ void DS1882::mute() {
 }
 
 void DS1882::up() {
-    _level++;
-    setLevel(_level);
+    changeBy(1);
 }
 
 void DS1882::down() {
-    _level--;
-    setLevel(_level);
+    changeBy(-1);
 }
 
 
