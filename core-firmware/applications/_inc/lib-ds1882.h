@@ -41,7 +41,7 @@ void DS1882::setup() {
     Wire.begin();
 
     Wire.beginTransmission(_address);
-    Wire.write(0b10000110);
+    Wire.write(0b10000110); // Config
     Wire.write(1);
     Wire.endTransmission(true);
 

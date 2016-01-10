@@ -30,8 +30,6 @@ void powerOff();
 void powerOn();
 void potChanged();
 void sendRssi();
-void volUp();
-void volDn();
 void volChange(int i);
 void volComplete(int i);
 void IRUpdate();
@@ -75,7 +73,7 @@ Relay ampstby("ampstby", pinRelayAmpStby);
 DS1882 volume("volume");
 Adc rssi("rssi", pinAmpRSSI, 12, 3.3);
 LED led("led", pinLedR, pinLedG, pinLedB);
-Selector selector("selector", pinSelector1, pinSelector2);
+Selector source("source", pinSelector1, pinSelector2);
 
 IRDetector IR(pinIR);
 
@@ -139,31 +137,36 @@ void loop() {
             // A BUTTON
             case 0x10EFF807:
                 mqttStatus("ir", "btn", "A");
-                selector.select(1);
+                source.select(1);
+                source.sendStatus();
                 break;
 
             // B BUTTON
             case 0x10EF7887:
                 mqttStatus("ir", "btn", "B");
-                selector.select(2);
+                source.select(2);
+                source.sendStatus();
                 break;
 
             // C BUTTON
             case 0x10EF58A7:
                 mqttStatus("ir", "btn", "C");
-                selector.select(3);
+                source.select(3);
+                source.sendStatus();
                 break;
 
             // UP ARROW
             case 0x10EFA05F:
                 mqttStatus("ir", "btn", "UP");
                 volume.up();
+                volume.sendStatus();
                 break;
 
             // DOWN ARROW
             case 0x10EF00FF:
                 mqttStatus("ir", "btn", "DOWN");
                 volume.down();
+                volume.sendStatus();
                 break;
 
             // LEFT ARROW
@@ -182,7 +185,7 @@ void loop() {
                 break;
 
             default:
-                mqttStatus("ir", "code", code);
+                //mqttStatus("ir", "code", code);
                 break;
         }
     }
@@ -233,15 +236,15 @@ void onKnobPress() {
 }
 
 void inputToggle() {
-    switch (selector.getSelection()) {
+    switch (source.getSelection()) {
         case 1:
-            selector.select(3);
+            source.select(3);
             break;
         case 3:
-            selector.select(1);
+            source.select(1);
             break;
     }
-    selector.sendStatus();
+    source.sendStatus();
 }
 
 void powerToggle() {
@@ -259,30 +262,17 @@ void powerOff() {
     delay(100);
     ampstby.close();
     led.off();
+    volume.sendStatus();
 }
 
 void powerOn() {
     timer.setTimeout(3000, sendRssi);
     volume.setLevel(30);
+    volume.sendStatus();
     rxrelay.open();
     ampstby.open();
     led.on();
 }
-
-// ******************************
-// Button Press Handlers
-// ******************************
-
-void volUp() {
-    volume.up();
-    volume.sendStatus();
-}
-
-void volDn() {
-    volume.down();
-    volume.sendStatus();
-}
-
 
 
 // ******************************
@@ -314,6 +304,6 @@ void mqttCustomMessageHandler(MqttMessage msg) {
     ampstby.mqtt(msg);
     rxrelay.mqtt(msg);
     volume.mqtt(msg);
-    selector.mqtt(msg);
+    source.mqtt(msg);
 
 }
